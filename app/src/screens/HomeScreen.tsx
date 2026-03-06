@@ -52,10 +52,20 @@ export default function HomeScreen() {
 
       {/* Permission warnings */}
       {!status.hasPermission && (
-        <TouchableOpacity style={[styles.card, styles.warningCard]} onPress={handlePermission}>
+        <View style={[styles.card, styles.warningCard]}>
           <Text style={styles.warningText}>⚠️ Permissão de notificação necessária</Text>
-          <Text style={styles.warningDesc}>Toque para configurar</Text>
-        </TouchableOpacity>
+          <Text style={styles.warningDesc}>Siga os 2 passos abaixo:</Text>
+
+          <TouchableOpacity style={styles.stepBtn} onPress={() => NotificationService.openAppSettings()}>
+            <Text style={styles.stepBtnText}>Passo 1: Abrir Config do App</Text>
+            <Text style={styles.stepHint}>Toque em (⋮) → "Permitir configurações restritas"</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={[styles.stepBtn, { backgroundColor: '#1e3a5f' }]} onPress={handlePermission}>
+            <Text style={styles.stepBtnText}>Passo 2: Ativar Acesso a Notificações</Text>
+            <Text style={styles.stepHint}>Ative o toggle do AIReplyApp</Text>
+          </TouchableOpacity>
+        </View>
       )}
 
       {/* Stats */}
@@ -105,4 +115,7 @@ const styles = StyleSheet.create({
   statLabel: { fontSize: 12, color: '#94a3b8', marginTop: 4 },
   planName: { fontSize: 20, fontWeight: '700', color: '#6366f1', marginTop: 8 },
   planStatus: { fontSize: 13, color: '#94a3b8', marginTop: 4 },
+  stepBtn: { backgroundColor: '#1e3a2f', borderRadius: 12, padding: 14, marginTop: 12 },
+  stepBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  stepHint: { color: '#94a3b8', fontSize: 12, marginTop: 4 },
 });

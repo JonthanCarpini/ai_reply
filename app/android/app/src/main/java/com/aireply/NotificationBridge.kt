@@ -3,6 +3,7 @@ package com.aireply
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import com.facebook.react.bridge.*
@@ -77,6 +78,21 @@ class NotificationBridge(reactContext: ReactApplicationContext) :
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         reactApplicationContext.startActivity(intent)
+    }
+
+    @ReactMethod
+    fun openAppSettings() {
+        val ctx = reactApplicationContext
+        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+            data = Uri.parse("package:${ctx.packageName}")
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        ctx.startActivity(intent)
+    }
+
+    @ReactMethod
+    fun needsRestrictedSettingsPermission(promise: Promise) {
+        promise.resolve(Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
     }
 
     @ReactMethod

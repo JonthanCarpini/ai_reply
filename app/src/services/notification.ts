@@ -45,6 +45,15 @@ export const NotificationService = {
     NotificationBridge?.requestIgnoreBatteryOptimization();
   },
 
+  openAppSettings: () => {
+    NotificationBridge?.openAppSettings();
+  },
+
+  needsRestrictedSettings: async (): Promise<boolean> => {
+    if (!NotificationBridge) return false;
+    return NotificationBridge.needsRestrictedSettingsPermission();
+  },
+
   onMessageProcessed: (callback: (data: any) => void) => {
     if (!emitter) return { remove: () => {} };
     return emitter.addListener('onMessageProcessed', callback);
