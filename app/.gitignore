@@ -1,0 +1,10 @@
+node_modules/
+android/build/
+android/app/build/
+android/.gradle/
+android/app/.cxx/
+android/local.properties
+*.apk
+*.aab
+*.hprof
+.metro-health-check*

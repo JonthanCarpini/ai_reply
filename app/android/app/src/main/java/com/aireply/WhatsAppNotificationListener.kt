@@ -6,7 +6,7 @@ import android.os.Bundle
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
-import androidx.core.app.RemoteInput
+import android.app.RemoteInput
 import kotlinx.coroutines.*
 import org.json.JSONObject
 import java.io.OutputStreamWriter
@@ -45,13 +45,9 @@ class WhatsAppNotificationListener : NotificationListenerService() {
         val title = extras.getString(Notification.EXTRA_TITLE) ?: return
         val text = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString() ?: return
 
-        // Ignorar grupos (mensagens com ":" no texto indicam grupo)
         if (text.contains(":") && !title.contains("+")) return
-
-        // Ignorar mensagens vazias ou muito curtas
         if (text.isBlank() || text.length < 2) return
 
-        // Encontrar Reply Action
         val replyAction = sbn.notification.actions?.find { action ->
             action.remoteInputs?.isNotEmpty() == true
         } ?: return
@@ -81,10 +77,8 @@ class WhatsAppNotificationListener : NotificationListenerService() {
         }
         val apiUrl = prefs.getString("api_url", "https://api.aireply.xpainel.online/api") ?: return
 
-        // Extrair telefone do contato (se disponível na notificação)
         val phone = extractPhone(sbn)
 
-        // Chamar API do backend
         val url = URL("$apiUrl/messages/process")
         val conn = url.openConnection() as HttpURLConnection
         conn.requestMethod = "POST"
@@ -118,7 +112,6 @@ class WhatsAppNotificationListener : NotificationListenerService() {
 
         NotificationBridge.sendMessageProcessed(this, sender, phone, message, reply)
 
-        // Responder via Reply Action
         if (reply.isNotEmpty()) {
             val intent = Intent()
             val bundle = Bundle()
@@ -128,14 +121,12 @@ class WhatsAppNotificationListener : NotificationListenerService() {
             RemoteInput.addResultsToIntent(replyAction.remoteInputs, intent, bundle)
             replyAction.actionIntent.send(this, 0, intent)
 
-            // Cancelar notificação para limpar
             cancelNotification(sbn.key)
             Log.i(TAG, "Replied to $sender: ${reply.take(50)}...")
         }
     }
 
     private fun extractPhone(sbn: StatusBarNotification): String {
-        // Tentar extrair telefone do key ou tag da notificação
         val key = sbn.key ?: ""
         val phoneRegex = Regex("\\+?\\d{10,15}")
         return phoneRegex.find(key)?.value ?: ""
