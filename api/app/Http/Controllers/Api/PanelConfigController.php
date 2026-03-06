@@ -59,17 +59,13 @@ class PanelConfigController extends Controller
         try {
             $panelUrl = rtrim($request->panel_url, '/');
             $endpoint = $panelUrl . '/api/reseller/credits';
-            $payload = json_encode(['api_key' => $request->api_key]);
-            $encoded = base64_encode($payload);
 
             Log::info('[PanelTest] Testando conexão', [
                 'endpoint' => $endpoint,
-                'payload_raw' => $payload,
-                'payload_b64' => $encoded,
             ]);
 
             $response = Http::timeout(10)->post($endpoint, [
-                'data' => $encoded,
+                'api_key' => $request->api_key,
             ]);
 
             Log::info('[PanelTest] Resposta do painel', [
