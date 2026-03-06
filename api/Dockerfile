@@ -11,10 +11,15 @@ RUN apk add --no-cache \
     zip \
     unzip \
     curl \
+    autoconf \
+    gcc \
+    g++ \
+    make \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
     && docker-php-ext-install pdo_mysql mbstring gd xml bcmath opcache \
     && pecl install redis \
-    && docker-php-ext-enable redis
+    && docker-php-ext-enable redis \
+    && apk del autoconf gcc g++ make
 
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
