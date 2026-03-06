@@ -79,14 +79,65 @@ class PanelConfigController extends Controller
 
             if ($response->successful()) {
                 $data = $response->json();
-                $success = isset($data['data']) || (isset($data['STORAGE']) && $data['STORAGE'] === 'painel-api');
 
-                if ($success) {
+                // Decodificar resposta no padrão IBO
+                if (isset($data['STORAGE']) && $data['STORAGE'] === 'painel-api') {
+                    $inner = is_string($data['data'] ?? null)
+                        ? json_decode($data['data'], true)
+                        : ($data['data'] ?? []);
+
+                    Log::info('[PanelTest] Resposta IBO decodificada', ['inner' => $inner]);
+
+                    // Verificar erros específicos do painel
+                    $error = $inner['error'] ?? null;
+                    if ($error === 'api_disabled') {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'A API do painel está desabilitada. Ative em Configurações → Módulos → API de Revendedor.',
+                        ], 422);
+                    }
+                    if ($error === 'invalid_api_key' || $error === 'api_key_missing') {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'API Key inválida ou não encontrada. Verifique a chave gerada em API Keys no painel.',
+                        ], 422);
+                    }
+                    if ($error === 'rate_limit_exceeded') {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'Limite de requisições excedido. Tente novamente em 1 minuto.',
+                        ], 422);
+                    }
+                    if ($error) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => "Erro do painel: {$error}",
+                        ], 422);
+                    }
+
+                    // Sucesso real
+                    if (($inner['success'] ?? false) === true || isset($inner['credits'])) {
+                        $config = $request->user()->panelConfigs()->where('panel_url', $request->panel_url)->first();
+                        if ($config) {
+                            $config->update(['status' => 'connected', 'last_verified_at' => now()]);
+                        }
+
+                        $credits = $inner['data']['credits'] ?? $inner['credits'] ?? null;
+                        $msg = 'Conexão com o painel estabelecida!';
+                        if ($credits !== null) {
+                            $msg .= " Saldo: {$credits} créditos.";
+                        }
+
+                        return response()->json(['success' => true, 'message' => $msg]);
+                    }
+                }
+
+                // Formato não-IBO
+                if (isset($data['success']) && $data['success']) {
                     $config = $request->user()->panelConfigs()->where('panel_url', $request->panel_url)->first();
                     if ($config) {
                         $config->update(['status' => 'connected', 'last_verified_at' => now()]);
                     }
-
                     return response()->json(['success' => true, 'message' => 'Conexão com o painel estabelecida.']);
                 }
             }
