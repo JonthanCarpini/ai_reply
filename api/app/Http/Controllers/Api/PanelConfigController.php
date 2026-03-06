@@ -7,6 +7,7 @@ use App\Models\PanelConfig;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class PanelConfigController extends Controller
 {
@@ -56,9 +57,24 @@ class PanelConfigController extends Controller
         ]);
 
         try {
+            $panelUrl = rtrim($request->panel_url, '/');
+            $endpoint = $panelUrl . '/api/reseller/credits';
             $payload = json_encode(['api_key' => $request->api_key]);
-            $response = Http::timeout(10)->post(rtrim($request->panel_url, '/') . '/api/reseller/credits', [
-                'data' => base64_encode($payload),
+            $encoded = base64_encode($payload);
+
+            Log::info('[PanelTest] Testando conexão', [
+                'endpoint' => $endpoint,
+                'payload_raw' => $payload,
+                'payload_b64' => $encoded,
+            ]);
+
+            $response = Http::timeout(10)->post($endpoint, [
+                'data' => $encoded,
+            ]);
+
+            Log::info('[PanelTest] Resposta do painel', [
+                'status' => $response->status(),
+                'body' => $response->body(),
             ]);
 
             if ($response->successful()) {
@@ -75,8 +91,12 @@ class PanelConfigController extends Controller
                 }
             }
 
-            return response()->json(['success' => false, 'message' => 'Painel não respondeu corretamente.'], 422);
+            return response()->json([
+                'success' => false,
+                'message' => 'Painel não respondeu corretamente. HTTP ' . $response->status(),
+            ], 422);
         } catch (\Exception $e) {
+            Log::error('[PanelTest] Exceção', ['error' => $e->getMessage()]);
             return response()->json(['success' => false, 'message' => 'Erro ao conectar: ' . $e->getMessage()], 422);
         }
     }
