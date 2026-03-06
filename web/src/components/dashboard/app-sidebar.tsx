@@ -36,11 +36,13 @@ import {
   CreditCard,
   LogOut,
   ChevronUp,
+  BarChart3,
 } from "lucide-react";
 
 const mainItems = [
   { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
   { title: "Conversas", url: "/conversations", icon: MessageSquare },
+  { title: "Analytics", url: "/analytics", icon: BarChart3 },
 ];
 
 const settingsItems = [

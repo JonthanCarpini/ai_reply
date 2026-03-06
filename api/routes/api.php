@@ -2,6 +2,8 @@
 
 use App\Http\Controllers\Api\ActionController;
 use App\Http\Controllers\Api\AiConfigController;
+use App\Http\Controllers\Api\AnalyticsController;
+use App\Http\Controllers\Api\BillingController;
 use App\Http\Controllers\Api\ConversationController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\MessageController;
@@ -18,6 +20,9 @@ use Illuminate\Support\Facades\Route;
 // ── Auth (público) ──────────────────────────────────────
 Route::post('/auth/register', RegisterController::class);
 Route::post('/auth/login', LoginController::class);
+
+// ── Webhook (público, sem auth) ─────────────────────────
+Route::post('/billing/webhook', [BillingController::class, 'webhook']);
 
 // ── Rotas autenticadas ──────────────────────────────────
 Route::middleware('auth:sanctum')->group(function () {
@@ -74,4 +79,18 @@ Route::middleware('auth:sanctum')->group(function () {
     // Dashboard
     Route::get('/dashboard/stats', [DashboardController::class, 'stats']);
     Route::get('/dashboard/charts', [DashboardController::class, 'charts']);
+
+    // Analytics
+    Route::get('/analytics/conversations', [AnalyticsController::class, 'conversations']);
+    Route::get('/analytics/actions', [AnalyticsController::class, 'actions']);
+    Route::get('/analytics/ai-performance', [AnalyticsController::class, 'aiPerformance']);
+    Route::get('/analytics/action-logs', [AnalyticsController::class, 'actionLogs']);
+
+    // Billing
+    Route::get('/billing/plans', [BillingController::class, 'plans']);
+    Route::get('/billing/subscription', [BillingController::class, 'subscription']);
+    Route::post('/billing/subscribe', [BillingController::class, 'subscribe']);
+    Route::post('/billing/change-plan', [BillingController::class, 'changePlan']);
+    Route::post('/billing/cancel', [BillingController::class, 'cancel']);
+    Route::get('/billing/invoices', [BillingController::class, 'invoices']);
 });
