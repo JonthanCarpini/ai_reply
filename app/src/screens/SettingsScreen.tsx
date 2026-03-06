@@ -17,21 +17,25 @@ export default function SettingsScreen({ navigation }: Props) {
     ]);
   };
 
+  const comingSoon = (label: string) => {
+    Alert.alert(label, 'Esta funcionalidade será disponibilizada em breve via painel web.');
+  };
+
   const sections = [
     {
       title: 'Configurações',
       items: [
-        { label: 'Painel XUI', desc: 'URL e API key do painel', screen: 'PanelConfig' },
-        { label: 'Inteligência Artificial', desc: 'Provedor, modelo e API key', screen: 'AIConfig' },
-        { label: 'Prompts', desc: 'System prompt e mensagens', screen: 'Prompts' },
-        { label: 'Ações', desc: 'Criar teste, renovar, etc', screen: 'Actions' },
-        { label: 'Regras', desc: 'Horários, blacklist, rate limit', screen: 'Rules' },
+        { label: 'Painel XUI', desc: 'URL e API key do painel', action: () => comingSoon('Painel XUI') },
+        { label: 'Inteligência Artificial', desc: 'Provedor, modelo e API key', action: () => comingSoon('Inteligência Artificial') },
+        { label: 'Prompts', desc: 'System prompt e mensagens', action: () => comingSoon('Prompts') },
+        { label: 'Ações', desc: 'Criar teste, renovar, etc', action: () => comingSoon('Ações') },
+        { label: 'Regras', desc: 'Horários, blacklist, rate limit', action: () => comingSoon('Regras') },
       ],
     },
     {
       title: 'Conta',
       items: [
-        { label: 'Meu Plano', desc: user?.subscription?.plan?.name || 'Sem plano', screen: 'Plan' },
+        { label: 'Meu Plano', desc: user?.subscription?.plan?.name || 'Sem plano', action: () => comingSoon('Meu Plano') },
       ],
     },
   ];
@@ -55,7 +59,7 @@ export default function SettingsScreen({ navigation }: Props) {
         <View key={section.title} style={styles.section}>
           <Text style={styles.sectionTitle}>{section.title}</Text>
           {section.items.map((item) => (
-            <TouchableOpacity key={item.label} style={styles.menuItem} onPress={() => navigation.navigate(item.screen)}>
+            <TouchableOpacity key={item.label} style={styles.menuItem} onPress={item.action}>
               <View>
                 <Text style={styles.menuLabel}>{item.label}</Text>
                 <Text style={styles.menuDesc}>{item.desc}</Text>
@@ -69,12 +73,25 @@ export default function SettingsScreen({ navigation }: Props) {
       {/* Permissions */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Permissões</Text>
+        <TouchableOpacity style={styles.menuItem} onPress={() => NotificationService.openAppSettings()}>
+          <View>
+            <Text style={styles.menuLabel}>Configurações do App</Text>
+            <Text style={styles.menuDesc}>Permitir configurações restritas</Text>
+          </View>
+          <Text style={styles.arrow}>›</Text>
+        </TouchableOpacity>
         <TouchableOpacity style={styles.menuItem} onPress={() => NotificationService.openPermissionSettings()}>
-          <Text style={styles.menuLabel}>Acesso a Notificações</Text>
+          <View>
+            <Text style={styles.menuLabel}>Acesso a Notificações</Text>
+            <Text style={styles.menuDesc}>Ativar listener do WhatsApp</Text>
+          </View>
           <Text style={styles.arrow}>›</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.menuItem} onPress={() => NotificationService.requestBatteryOptimization()}>
-          <Text style={styles.menuLabel}>Otimização de Bateria</Text>
+          <View>
+            <Text style={styles.menuLabel}>Otimização de Bateria</Text>
+            <Text style={styles.menuDesc}>Desativar para manter serviço ativo</Text>
+          </View>
           <Text style={styles.arrow}>›</Text>
         </TouchableOpacity>
       </View>

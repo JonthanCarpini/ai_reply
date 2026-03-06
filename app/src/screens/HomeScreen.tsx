@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, RefreshControl, Alert } from 'react-native';
 import { useAuth } from '../store/auth';
 import { useService } from '../store/service';
 import { NotificationService } from '../services/notification';
@@ -31,6 +31,29 @@ export default function HomeScreen() {
   const handlePermission = () => NotificationService.openPermissionSettings();
   const handleBattery = () => NotificationService.requestBatteryOptimization();
 
+  const handleToggle = async () => {
+    const hasPerm = await NotificationService.hasPermission();
+    if (!hasPerm) {
+      Alert.alert(
+        'Permissão Necessária',
+        'Antes de iniciar o serviço, você precisa conceder acesso às notificações.\n\n' +
+        '1. Primeiro, abra as configurações do app e permita "Configurações restritas"\n' +
+        '2. Depois, ative o acesso a notificações para o AIReplyApp',
+        [
+          { text: 'Abrir Config do App', onPress: () => NotificationService.openAppSettings() },
+          { text: 'Ativar Notificações', onPress: () => NotificationService.openPermissionSettings() },
+          { text: 'Cancelar', style: 'cancel' },
+        ]
+      );
+      return;
+    }
+    try {
+      await toggleService();
+    } catch (e: any) {
+      Alert.alert('Erro', e?.message || 'Erro ao iniciar/parar o serviço');
+    }
+  };
+
   return (
     <ScrollView style={styles.container} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6366f1" />}>
       <Text style={styles.greeting}>Olá, {user?.name?.split(' ')[0]} 👋</Text>
@@ -44,7 +67,7 @@ export default function HomeScreen() {
               {status.isRunning ? '● Ativo' : '○ Inativo'}
             </Text>
           </View>
-          <TouchableOpacity style={[styles.toggleBtn, { backgroundColor: status.isRunning ? '#ef4444' : '#22c55e' }]} onPress={toggleService}>
+          <TouchableOpacity style={[styles.toggleBtn, { backgroundColor: status.isRunning ? '#ef4444' : '#22c55e' }]} onPress={handleToggle}>
             <Text style={styles.toggleText}>{status.isRunning ? 'Parar' : 'Iniciar'}</Text>
           </TouchableOpacity>
         </View>
