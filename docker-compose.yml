@@ -3,12 +3,12 @@ version: '3.8'
 services:
   ai_reply_api:
     build:
-      context: .
+      context: ./api
       dockerfile: Dockerfile
     container_name: ai_reply_api
     restart: unless-stopped
     env_file:
-      - .env
+      - ./api/.env
     volumes:
       - api_storage:/var/www/storage
     networks:
@@ -22,6 +22,23 @@ services:
       - "traefik.http.services.ai-reply-api.loadbalancer.server.port=80"
     depends_on:
       - ai_reply_redis
+
+  ai_reply_web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_API_URL=https://api.aireply.vp1.officex.site/api
+    container_name: ai_reply_web
+    restart: unless-stopped
+    networks:
+      - web_network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.ai-reply-web.rule=Host(`aireply.vp1.officex.site`)"
+      - "traefik.http.routers.ai-reply-web.entrypoints=websecure"
+      - "traefik.http.routers.ai-reply-web.tls.certresolver=myresolver"
+      - "traefik.http.services.ai-reply-web.loadbalancer.server.port=3000"
 
   ai_reply_redis:
     image: redis:7-alpine
