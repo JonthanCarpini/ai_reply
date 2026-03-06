@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\ActionController;
 use App\Http\Controllers\Api\AiConfigController;
 use App\Http\Controllers\Api\ConversationController;
 use App\Http\Controllers\Api\DashboardController;
+use App\Http\Controllers\Api\MessageController;
 use App\Http\Controllers\Api\PanelConfigController;
 use App\Http\Controllers\Api\PromptController;
 use App\Http\Controllers\Api\RuleController;
@@ -66,6 +67,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/conversations/{id}/archive', [ConversationController::class, 'archive']);
     Route::put('/conversations/{id}/block', [ConversationController::class, 'block']);
     Route::delete('/conversations/{id}', [ConversationController::class, 'destroy']);
+
+    // Mensagens (Core — chamado pelo App)
+    Route::post('/messages/process', [MessageController::class, 'process']);
 
     // Dashboard
     Route::get('/dashboard/stats', [DashboardController::class, 'stats']);
