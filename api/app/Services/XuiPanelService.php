@@ -165,7 +165,9 @@ class XuiPanelService
     private function post(string $endpoint, array $data): array
     {
         try {
-            $response = Http::timeout(15)->post($this->baseUrl . $endpoint, $data);
+            $response = Http::timeout(15)->post($this->baseUrl . $endpoint, [
+                'data' => base64_encode(json_encode($data)),
+            ]);
 
             if (!$response->successful()) {
                 return ['success' => false, 'message' => 'Painel retornou erro HTTP ' . $response->status()];

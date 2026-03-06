@@ -56,8 +56,9 @@ class PanelConfigController extends Controller
         ]);
 
         try {
+            $payload = json_encode(['api_key' => $request->api_key]);
             $response = Http::timeout(10)->post(rtrim($request->panel_url, '/') . '/api/reseller/credits', [
-                'api_key' => $request->api_key,
+                'data' => base64_encode($payload),
             ]);
 
             if ($response->successful()) {
