@@ -16,9 +16,9 @@ services:
       - ai_reply_internal
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.ai-reply-api.rule=Host(`api.aireply.vp1.officex.site`)"
+      - "traefik.http.routers.ai-reply-api.rule=Host(`api.aireply.xpainel.online`)"
       - "traefik.http.routers.ai-reply-api.entrypoints=websecure"
-      - "traefik.http.routers.ai-reply-api.tls.certresolver=myresolver"
+      - "traefik.http.routers.ai-reply-api.tls.certresolver=le"
       - "traefik.http.services.ai-reply-api.loadbalancer.server.port=80"
     depends_on:
       - ai_reply_redis
@@ -28,16 +28,16 @@ services:
       context: ./web
       dockerfile: Dockerfile
       args:
-        - NEXT_PUBLIC_API_URL=https://api.aireply.vp1.officex.site/api
+        - NEXT_PUBLIC_API_URL=https://api.aireply.xpainel.online/api
     container_name: ai_reply_web
     restart: unless-stopped
     networks:
       - web_network
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.ai-reply-web.rule=Host(`aireply.vp1.officex.site`)"
+      - "traefik.http.routers.ai-reply-web.rule=Host(`aireply.xpainel.online`)"
       - "traefik.http.routers.ai-reply-web.entrypoints=websecure"
-      - "traefik.http.routers.ai-reply-web.tls.certresolver=myresolver"
+      - "traefik.http.routers.ai-reply-web.tls.certresolver=le"
       - "traefik.http.services.ai-reply-web.loadbalancer.server.port=3000"
 
   ai_reply_redis:
