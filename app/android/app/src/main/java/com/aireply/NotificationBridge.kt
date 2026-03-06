@@ -144,6 +144,27 @@ class NotificationBridge(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
+    fun setWhatsAppPackages(packages: ReadableArray) {
+        val set = mutableSetOf<String>()
+        for (i in 0 until packages.size()) {
+            packages.getString(i)?.let { set.add(it) }
+        }
+        reactApplicationContext.getSharedPreferences("ai_reply_prefs", Context.MODE_PRIVATE)
+            .edit()
+            .putStringSet("whatsapp_packages", set)
+            .apply()
+    }
+
+    @ReactMethod
+    fun getWhatsAppPackages(promise: Promise) {
+        val prefs = reactApplicationContext.getSharedPreferences("ai_reply_prefs", Context.MODE_PRIVATE)
+        val set = prefs.getStringSet("whatsapp_packages", setOf("com.whatsapp", "com.whatsapp.w4b"))
+        val arr = Arguments.createArray()
+        set?.forEach { arr.pushString(it) }
+        promise.resolve(arr)
+    }
+
+    @ReactMethod
     fun requestIgnoreBatteryOptimization() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).apply {

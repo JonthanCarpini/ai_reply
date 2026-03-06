@@ -2,13 +2,15 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, RefreshControl, Alert } from 'react-native';
 import { useAuth } from '../store/auth';
 import { useService } from '../store/service';
+import { useSync } from '../store/sync';
 import { NotificationService } from '../services/notification';
 import api from '../services/api';
 import { DashboardStats } from '../types';
 
 export default function HomeScreen() {
   const user = useAuth((s) => s.user);
-  const { status, refreshStatus, toggleService } = useService();
+  const { status, refreshStatus, toggleService, addLog } = useService();
+  const { pull } = useSync();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -18,9 +20,43 @@ export default function HomeScreen() {
       setStats(data);
     } catch {}
     await refreshStatus();
+    await pull();
   };
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => {
+    loadData();
+
+    const msgSub = NotificationService.onMessageProcessed((data) => {
+      addLog({
+        id: Date.now().toString(),
+        timestamp: new Date().toISOString(),
+        type: data.reply ? 'ai_response' : 'message_received',
+        contactName: data.contactName,
+        contactPhone: data.contactPhone,
+        message: data.message,
+        response: data.reply,
+      });
+    });
+
+    const errSub = NotificationService.onError((data) => {
+      addLog({
+        id: Date.now().toString(),
+        timestamp: new Date().toISOString(),
+        type: 'error',
+        error: data.error,
+      });
+    });
+
+    const statusSub = NotificationService.onServiceStatusChange((data) => {
+      refreshStatus();
+    });
+
+    return () => {
+      msgSub.remove();
+      errSub.remove();
+      statusSub.remove();
+    };
+  }, []);
 
   const onRefresh = async () => {
     setRefreshing(true);

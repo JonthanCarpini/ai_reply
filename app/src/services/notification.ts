@@ -41,6 +41,16 @@ export const NotificationService = {
     NotificationBridge?.setApiUrl(url);
   },
 
+  setWhatsAppPackages: async (packages: string[]): Promise<void> => {
+    NotificationBridge?.setWhatsAppPackages(packages);
+  },
+
+  getWhatsAppPackages: async (): Promise<string[]> => {
+    if (!NotificationBridge) return ['com.whatsapp', 'com.whatsapp.w4b'];
+    const arr = await NotificationBridge.getWhatsAppPackages();
+    return arr ? Array.from(arr) : ['com.whatsapp', 'com.whatsapp.w4b'];
+  },
+
   requestBatteryOptimization: () => {
     NotificationBridge?.requestIgnoreBatteryOptimization();
   },

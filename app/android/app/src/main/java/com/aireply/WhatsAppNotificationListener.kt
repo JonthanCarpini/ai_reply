@@ -17,17 +17,22 @@ class WhatsAppNotificationListener : NotificationListenerService() {
 
     companion object {
         private const val TAG = "AIReplyListener"
-        private val WHATSAPP_PACKAGES = setOf("com.whatsapp", "com.whatsapp.w4b")
+        private val DEFAULT_PACKAGES = setOf("com.whatsapp", "com.whatsapp.w4b")
         var isRunning = false
             private set
     }
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
+    private fun getAllowedPackages(): Set<String> {
+        val prefs = getSharedPreferences("ai_reply_prefs", MODE_PRIVATE)
+        return prefs.getStringSet("whatsapp_packages", DEFAULT_PACKAGES) ?: DEFAULT_PACKAGES
+    }
+
     override fun onListenerConnected() {
         super.onListenerConnected()
         isRunning = true
-        Log.i(TAG, "NotificationListener connected")
+        Log.i(TAG, "NotificationListener connected — monitoring: ${getAllowedPackages()}")
         NotificationBridge.sendServiceStatus(this, true)
     }
 
@@ -39,7 +44,7 @@ class WhatsAppNotificationListener : NotificationListenerService() {
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
-        if (sbn.packageName !in WHATSAPP_PACKAGES) return
+        if (sbn.packageName !in getAllowedPackages()) return
 
         val extras = sbn.notification.extras ?: return
         val title = extras.getString(Notification.EXTRA_TITLE) ?: return

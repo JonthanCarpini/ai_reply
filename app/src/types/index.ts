@@ -88,3 +88,50 @@ export type SettingsStackParamList = {
   Rules: undefined;
   Plan: undefined;
 };
+
+export interface SyncData {
+  panel: {
+    id: number;
+    panel_name: string;
+    panel_url: string;
+    is_active: boolean;
+    status: string;
+    has_api_key: boolean;
+  } | null;
+  ai_config: {
+    id: number;
+    provider: string;
+    model: string;
+    temperature: number;
+    max_tokens: number;
+    is_active: boolean;
+    has_api_key: boolean;
+  } | null;
+  prompts: Array<{
+    id: number;
+    name: string;
+    system_prompt: string;
+    greeting_message: string | null;
+    fallback_message: string | null;
+    offline_message: string | null;
+    custom_variables: Record<string, string> | null;
+    is_active: boolean;
+  }>;
+  actions: Array<{
+    id: number;
+    action_type: string;
+    label: string;
+    enabled: boolean;
+    params: Record<string, any> | null;
+    custom_instructions: string | null;
+    daily_limit: number;
+    daily_count: number;
+  }>;
+  rules: Array<{
+    id: number;
+    type: string;
+    config: Record<string, any>;
+    enabled: boolean;
+  }>;
+  synced_at: string;
+}

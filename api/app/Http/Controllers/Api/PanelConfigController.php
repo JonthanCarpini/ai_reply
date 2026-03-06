@@ -65,6 +65,17 @@ class PanelConfigController extends Controller
         ]);
 
         try {
+            $apiKey = $request->api_key;
+
+            // Se o app envia '__use_saved__', buscar a key salva no banco
+            if ($apiKey === '__use_saved__') {
+                $config = $request->user()->panelConfigs()->where('panel_url', $request->panel_url)->first();
+                if (!$config) {
+                    return response()->json(['success' => false, 'message' => 'Configuração de painel não encontrada.'], 422);
+                }
+                $apiKey = $config->getDecryptedApiKey();
+            }
+
             $panelUrl = rtrim($request->panel_url, '/');
             $endpoint = $panelUrl . '/api/reseller/credits';
 
@@ -73,7 +84,7 @@ class PanelConfigController extends Controller
             ]);
 
             $response = Http::timeout(10)->post($endpoint, [
-                'api_key' => $request->api_key,
+                'api_key' => $apiKey,
             ]);
 
             Log::info('[PanelTest] Resposta do painel', [
