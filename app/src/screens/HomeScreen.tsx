@@ -77,16 +77,24 @@ export default function HomeScreen() {
       {!status.hasPermission && (
         <View style={[styles.card, styles.warningCard]}>
           <Text style={styles.warningText}>⚠️ Permissão de notificação necessária</Text>
-          <Text style={styles.warningDesc}>Siga os 2 passos abaixo:</Text>
+          <Text style={styles.warningDesc}>Siga os 3 passos na ordem:</Text>
 
-          <TouchableOpacity style={styles.stepBtn} onPress={() => NotificationService.openAppSettings()}>
-            <Text style={styles.stepBtnText}>Passo 1: Abrir Config do App</Text>
-            <Text style={styles.stepHint}>Toque em (⋮) → "Permitir configurações restritas"</Text>
+          <TouchableOpacity style={styles.stepBtn} onPress={handlePermission}>
+            <Text style={styles.stepNumber}>1</Text>
+            <Text style={styles.stepBtnText}>Tentar ativar a permissão</Text>
+            <Text style={styles.stepHint}>Toque aqui → Na tela que abrir, toque no toggle do AIReplyApp → Vai aparecer "Configuração restrita", toque OK</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={[styles.stepBtn, { backgroundColor: '#1e3a5f' }]} onPress={handlePermission}>
-            <Text style={styles.stepBtnText}>Passo 2: Ativar Acesso a Notificações</Text>
-            <Text style={styles.stepHint}>Ative o toggle do AIReplyApp</Text>
+          <TouchableOpacity style={[styles.stepBtn, { backgroundColor: '#1e3a5f' }]} onPress={() => NotificationService.openAppSettings()}>
+            <Text style={styles.stepNumber}>2</Text>
+            <Text style={styles.stepBtnText}>Desbloquear nas configurações</Text>
+            <Text style={styles.stepHint}>Toque aqui → Na tela "Informações do app", toque nos 3 pontinhos (⋮) no canto superior direito → Toque "Permitir configurações restritas"</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={[styles.stepBtn, { backgroundColor: '#22543d' }]} onPress={handlePermission}>
+            <Text style={styles.stepNumber}>3</Text>
+            <Text style={styles.stepBtnText}>Ativar acesso a notificações</Text>
+            <Text style={styles.stepHint}>Toque aqui novamente → Agora o toggle do AIReplyApp estará desbloqueado → Ative-o</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -139,6 +147,7 @@ const styles = StyleSheet.create({
   planName: { fontSize: 20, fontWeight: '700', color: '#6366f1', marginTop: 8 },
   planStatus: { fontSize: 13, color: '#94a3b8', marginTop: 4 },
   stepBtn: { backgroundColor: '#1e3a2f', borderRadius: 12, padding: 14, marginTop: 12 },
+  stepNumber: { color: '#fbbf24', fontSize: 22, fontWeight: '900', marginBottom: 4 },
   stepBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
-  stepHint: { color: '#94a3b8', fontSize: 12, marginTop: 4 },
+  stepHint: { color: '#d4d4d8', fontSize: 12, marginTop: 4, lineHeight: 18 },
 });
