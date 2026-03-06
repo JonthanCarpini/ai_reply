@@ -1,0 +1,40 @@
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use App\Http\Controllers\Controller;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+
+class ActionController extends Controller
+{
+    public function index(Request $request): JsonResponse
+    {
+        $actions = $request->user()->actions()->orderBy('action_type')->get();
+
+        return response()->json(['data' => $actions]);
+    }
+
+    public function update(Request $request, int $id): JsonResponse
+    {
+        $action = $request->user()->actions()->findOrFail($id);
+
+        $validated = $request->validate([
+            'enabled' => ['sometimes', 'boolean'],
+            'params' => ['nullable', 'array'],
+            'custom_instructions' => ['nullable', 'string', 'max:2000'],
+            'daily_limit' => ['sometimes', 'integer', 'min:0'],
+        ]);
+
+        $action->update($validated);
+
+        return response()->json(['data' => $action]);
+    }
+
+    public function resetCounters(Request $request): JsonResponse
+    {
+        $request->user()->actions()->update(['daily_count' => 0, 'count_reset_date' => now()->toDateString()]);
+
+        return response()->json(['message' => 'Contadores resetados.']);
+    }
+}

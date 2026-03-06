@@ -1,0 +1,76 @@
+version: '3.8'
+
+services:
+  ai-reply-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ai_reply_api
+    restart: unless-stopped
+    environment:
+      - APP_NAME=AI Auto Reply
+      - APP_ENV=production
+      - APP_DEBUG=false
+      - APP_TIMEZONE=America/Sao_Paulo
+      - APP_URL=https://api.aireply.vp1.officex.site
+      - DB_CONNECTION=mysql
+      - DB_HOST=mysql_central
+      - DB_PORT=3306
+      - DB_DATABASE=ai_reply
+      - DB_USERNAME=ai_reply
+      - DB_PASSWORD=${DB_PASSWORD:-AiReply@2026}
+      - CACHE_STORE=redis
+      - QUEUE_CONNECTION=redis
+      - REDIS_HOST=ai_reply_redis
+      - REDIS_PORT=6379
+      - SANCTUM_STATEFUL_DOMAINS=aireply.vp1.officex.site
+      - FRONTEND_URL=https://aireply.vp1.officex.site
+    volumes:
+      - api_storage:/var/www/storage
+    networks:
+      - web_network
+      - ai_reply_internal
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.ai-reply-api.rule=Host(`api.aireply.vp1.officex.site`)"
+      - "traefik.http.routers.ai-reply-api.entrypoints=websecure"
+      - "traefik.http.routers.ai-reply-api.tls.certresolver=myresolver"
+      - "traefik.http.services.ai-reply-api.loadbalancer.server.port=80"
+    depends_on:
+      - ai_reply_redis
+
+  ai-reply-web:
+    build:
+      context: ../ai-reply-web
+      dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_API_URL=https://api.aireply.vp1.officex.site/api
+    container_name: ai_reply_web
+    restart: unless-stopped
+    networks:
+      - web_network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.ai-reply-web.rule=Host(`aireply.vp1.officex.site`)"
+      - "traefik.http.routers.ai-reply-web.entrypoints=websecure"
+      - "traefik.http.routers.ai-reply-web.tls.certresolver=myresolver"
+      - "traefik.http.services.ai-reply-web.loadbalancer.server.port=3000"
+
+  ai_reply_redis:
+    image: redis:7-alpine
+    container_name: ai_reply_redis
+    restart: unless-stopped
+    networks:
+      - ai_reply_internal
+    volumes:
+      - redis_data:/data
+
+volumes:
+  api_storage:
+  redis_data:
+
+networks:
+  web_network:
+    external: true
+  ai_reply_internal:
+    driver: bridge
