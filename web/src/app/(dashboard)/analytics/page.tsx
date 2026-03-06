@@ -93,7 +93,7 @@ export default function AnalyticsPage() {
                 <CardContent>
                   <ResponsiveContainer width="100%" height={250}>
                     <PieChart>
-                      <Pie data={actionStats!.by_type.map((a) => ({ name: actionTypeLabels[a.action_type] || a.action_type, value: a.total }))} cx="50%" cy="50%" outerRadius={80} dataKey="value" label={({ name, percent }: { name: string; percent?: number }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}>
+                      <Pie data={actionStats!.by_type.map((a) => ({ name: actionTypeLabels[a.action_type] || a.action_type, value: a.total }))} cx="50%" cy="50%" outerRadius={80} dataKey="value" label={(props: any) => `${props.name} ${((props.percent ?? 0) * 100).toFixed(0)}%`}>
                         {actionStats!.by_type.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                       </Pie>
                       <Tooltip contentStyle={{ backgroundColor: "#1e293b", border: "1px solid #334155", borderRadius: "8px", color: "#fff" }} />
