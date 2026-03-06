@@ -36,14 +36,22 @@ class PanelConfigController extends Controller
             'api_key' => ['required', 'string'],
         ]);
 
+        $existing = $request->user()->panelConfigs()->where('panel_url', $validated['panel_url'])->first();
+
+        $updateData = [
+            'panel_name' => $validated['panel_name'] ?? 'Meu Painel',
+            'api_key_encrypted' => $validated['api_key'],
+            'is_active' => true,
+        ];
+
+        // Se a api_key mudou ou não existe config, resetar status
+        if (!$existing || $existing->getDecryptedApiKey() !== $validated['api_key']) {
+            $updateData['status'] = 'untested';
+        }
+
         $config = $request->user()->panelConfigs()->updateOrCreate(
             ['panel_url' => $validated['panel_url']],
-            [
-                'panel_name' => $validated['panel_name'] ?? 'Meu Painel',
-                'api_key_encrypted' => $validated['api_key'],
-                'is_active' => true,
-                'status' => 'untested',
-            ]
+            $updateData
         );
 
         return response()->json(['data' => $config->only('id', 'panel_name', 'panel_url', 'is_active', 'status')], 201);

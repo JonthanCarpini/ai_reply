@@ -56,7 +56,11 @@ export default function AiSettingsPage() {
     e.preventDefault();
     setSaving(true);
     try {
-      await api.post("/ai-config", form);
+      const payload = { ...form };
+      if (!payload.api_key) {
+        delete (payload as Record<string, unknown>).api_key;
+      }
+      await api.post("/ai-config", payload);
       toast.success("Configuração de IA salva!");
       loadConfig();
     } catch (err: unknown) {
