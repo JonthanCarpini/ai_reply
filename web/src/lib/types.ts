@@ -37,6 +37,7 @@ export interface Plan {
   messages_limit: number;
   whatsapp_limit: number;
   actions_limit: number;
+  ai_generation_limit: number;
   analytics_enabled: boolean;
   priority_support: boolean;
 }
