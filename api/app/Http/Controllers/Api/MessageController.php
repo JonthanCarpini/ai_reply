@@ -39,6 +39,13 @@ class MessageController extends Controller
             whatsappNumber: $validated['whatsapp_number'] ?? null,
         );
 
+        if ($result->error) {
+            return response()->json([
+                'reply' => '',
+                'error' => $result->error,
+            ]);
+        }
+
         if ($result->blocked) {
             return response()->json([
                 'reply' => '',

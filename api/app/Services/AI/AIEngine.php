@@ -35,6 +35,7 @@ class AIEngine
             return new ProcessResult(
                 reply: 'O atendimento automático não está configurado. Por favor, tente novamente mais tarde.',
                 conversationId: null,
+                error: 'not_configured',
             );
         }
 
@@ -54,8 +55,9 @@ class AIEngine
 
         if (!$this->checkPlanLimits($user)) {
             return new ProcessResult(
-                reply: 'Limite de mensagens do plano atingido. Atualize seu plano para continuar.',
+                reply: '',
                 conversationId: $conversation->id,
+                error: 'plan_limit_reached',
             );
         }
 
@@ -261,6 +263,7 @@ class ProcessResult
         public readonly ?bool $actionSuccess = null,
         public readonly bool $blocked = false,
         public readonly ?string $ruleBlocked = null,
+        public readonly ?string $error = null,
         public readonly int $tokensUsed = 0,
         public readonly int $latencyMs = 0,
     ) {}

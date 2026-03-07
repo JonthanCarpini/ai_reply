@@ -18,11 +18,18 @@ class WhatsAppNotificationListener : NotificationListenerService() {
     companion object {
         private const val TAG = "AIReplyListener"
         private val DEFAULT_PACKAGES = setOf("com.whatsapp", "com.whatsapp.w4b")
+        private const val COOLDOWN_MS = 30_000L
         var isRunning = false
             private set
     }
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    // Cooldown: contato → timestamp da última resposta enviada
+    private val lastReplyTime = mutableMapOf<String, Long>()
+
+    // Mensagens enviadas pelo próprio bot (para ignorar notificações de respostas próprias)
+    private val sentReplies = mutableSetOf<String>()
 
     private fun getAllowedPackages(): Set<String> {
         val prefs = getSharedPreferences("ai_reply_prefs", MODE_PRIVATE)
@@ -44,47 +51,41 @@ class WhatsAppNotificationListener : NotificationListenerService() {
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
-        Log.d(TAG, "Notification from: ${sbn.packageName}")
-
         val allowedPackages = getAllowedPackages()
-        if (sbn.packageName !in allowedPackages) {
-            Log.d(TAG, "SKIP: package ${sbn.packageName} not in allowed: $allowedPackages")
-            return
-        }
+        if (sbn.packageName !in allowedPackages) return
 
-        val extras = sbn.notification.extras ?: run {
-            Log.d(TAG, "SKIP: no extras")
-            return
-        }
-        val title = extras.getString(Notification.EXTRA_TITLE) ?: run {
-            Log.d(TAG, "SKIP: no title")
-            return
-        }
-        val text = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString() ?: run {
-            Log.d(TAG, "SKIP: no text for title=$title")
-            return
-        }
+        val extras = sbn.notification.extras ?: return
+        val title = extras.getString(Notification.EXTRA_TITLE) ?: return
+        val text = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString() ?: return
 
-        Log.d(TAG, "Notification: title=$title text=$text")
+        if (text.isBlank() || text.length < 2) return
 
-        // Filtrar mensagens de grupo (formato "Fulano: mensagem" no text COM título de grupo)
+        // Ignorar mensagens de grupo
         val isGroupMessage = extras.getBoolean(Notification.EXTRA_IS_GROUP_CONVERSATION, false)
         if (isGroupMessage) {
             Log.d(TAG, "SKIP: group message from $title")
             return
         }
 
-        if (text.isBlank() || text.length < 2) {
-            Log.d(TAG, "SKIP: text too short")
+        // Ignorar se é uma resposta que nós mesmos enviamos
+        val textKey = "${title}:${text.take(80)}"
+        if (sentReplies.remove(textKey)) {
+            Log.d(TAG, "SKIP: own reply to $title")
             return
         }
 
-        val replyAction = sbn.notification.actions?.find { action ->
-            action.remoteInputs?.isNotEmpty() == true
-        } ?: run {
-            Log.d(TAG, "SKIP: no reply action for $title (actions=${sbn.notification.actions?.size ?: 0})")
+        // Cooldown: ignorar mensagens do mesmo contato dentro de COOLDOWN_MS
+        val now = System.currentTimeMillis()
+        val lastReply = lastReplyTime[title] ?: 0L
+        if (now - lastReply < COOLDOWN_MS) {
+            Log.d(TAG, "SKIP: cooldown active for $title (${(now - lastReply) / 1000}s ago)")
             return
         }
+
+        // Verificar se tem ação de reply disponível
+        val replyAction = sbn.notification.actions?.find { action ->
+            action.remoteInputs?.isNotEmpty() == true
+        } ?: return
 
         Log.i(TAG, "Processing message from $title: ${text.take(50)}")
 
@@ -130,7 +131,6 @@ class WhatsAppNotificationListener : NotificationListenerService() {
             put("message", message)
         }
 
-        Log.d(TAG, "Request body: $body")
         OutputStreamWriter(conn.outputStream).use { it.write(body.toString()) }
 
         val responseCode = conn.responseCode
@@ -144,45 +144,70 @@ class WhatsAppNotificationListener : NotificationListenerService() {
         val responseBody = conn.inputStream.bufferedReader().readText()
         val json = JSONObject(responseBody)
         val reply = json.optString("reply", "")
+        val error = json.optString("error", "")
+        val blocked = json.optBoolean("blocked", false)
 
+        // Notificar o app sobre a mensagem processada
         NotificationBridge.sendMessageProcessed(this, sender, phone, message, reply)
 
-        if (reply.isNotEmpty()) {
-            val intent = Intent()
-            val bundle = Bundle()
-            replyAction.remoteInputs?.forEach { remoteInput ->
-                bundle.putCharSequence(remoteInput.resultKey, reply)
-            }
-            RemoteInput.addResultsToIntent(replyAction.remoteInputs, intent, bundle)
-            replyAction.actionIntent.send(this, 0, intent)
+        // NUNCA enviar mensagens de erro/limite/bloqueio ao cliente
+        if (error.isNotEmpty()) {
+            Log.w(TAG, "API returned error flag: $error — NOT replying to client")
+            NotificationBridge.sendError(this, error)
+            return
+        }
+        if (blocked) {
+            Log.d(TAG, "Message blocked by rules — NOT replying to client")
+            return
+        }
+        if (reply.isEmpty()) {
+            Log.d(TAG, "Empty reply — NOT replying to client")
+            return
+        }
 
-            cancelNotification(sbn.key)
-            Log.i(TAG, "Replied to $sender: ${reply.take(50)}...")
+        // Registrar resposta antes de enviar (para ignorar a notificação de retorno)
+        val replyKey = "${sender}:${reply.take(80)}"
+        sentReplies.add(replyKey)
+
+        // Marcar cooldown para este contato
+        lastReplyTime[sender] = System.currentTimeMillis()
+
+        // Enviar resposta via WhatsApp
+        val intent = Intent()
+        val bundle = Bundle()
+        replyAction.remoteInputs?.forEach { remoteInput ->
+            bundle.putCharSequence(remoteInput.resultKey, reply)
+        }
+        RemoteInput.addResultsToIntent(replyAction.remoteInputs, intent, bundle)
+        replyAction.actionIntent.send(this, 0, intent)
+
+        cancelNotification(sbn.key)
+        Log.i(TAG, "Replied to $sender: ${reply.take(50)}...")
+
+        // Limpar sentReplies antigos após 10s
+        scope.launch {
+            delay(10_000)
+            sentReplies.remove(replyKey)
         }
     }
 
     private fun extractPhone(sbn: StatusBarNotification): String {
         val phoneRegex = Regex("\\+?\\d{10,15}")
 
-        // Try notification key first
         val key = sbn.key ?: ""
         phoneRegex.find(key)?.value?.let { return it }
 
-        // Try tag
         sbn.tag?.let { tag ->
             phoneRegex.find(tag)?.value?.let { return it }
         }
 
-        // Try extras for android.conversationTitle or other fields
         val extras = sbn.notification.extras
         val convTitle = extras?.getString("android.conversationTitle") ?: ""
         phoneRegex.find(convTitle)?.value?.let { return it }
 
-        // Try title (contact name may have phone)
         val title = extras?.getString(Notification.EXTRA_TITLE) ?: ""
         phoneRegex.find(title)?.value?.let { return it }
 
-        Log.d(TAG, "Could not extract phone from notification. key=$key tag=${sbn.tag}")
         return ""
     }
 
