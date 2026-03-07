@@ -19,26 +19,18 @@ class WhatsAppNotificationListener : NotificationListenerService() {
     companion object {
         private const val TAG = "AIReplyListener"
         private val DEFAULT_PACKAGES = setOf("com.whatsapp", "com.whatsapp.w4b")
-        private const val COOLDOWN_MS = 30_000L
-        private const val DEDUP_WINDOW_MS = 5_000L
-        private const val POST_REPLY_BLOCK_MS = 4_000L
+        private const val POST_REPLY_BLOCK_MS = 5_000L
         var isRunning = false
             private set
     }
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
-    // Cooldown: contato → timestamp da última resposta enviada
-    private val lastReplyTime = ConcurrentHashMap<String, Long>()
-
-    // Timestamp do último envio de resposta por contato (para bloquear notificações próprias)
-    private val lastSentTime = ConcurrentHashMap<String, Long>()
-
-    // Dedup: chave(contato+msg) → timestamp — evita processar mesma msg 2x
-    private val recentMessages = ConcurrentHashMap<String, Long>()
-
-    // Contato → flag de processamento ativo (impede qualquer nova notificação de ser aceita)
+    // Contato → flag atômico de processamento ativo
     private val isProcessing = ConcurrentHashMap<String, Boolean>()
+
+    // Contato → timestamp da última mensagem processada (evita reprocessar)
+    private val lastProcessedTimestamp = ConcurrentHashMap<String, Long>()
 
     private fun getAllowedPackages(): Set<String> {
         val prefs = getSharedPreferences("ai_reply_prefs", MODE_PRIVATE)
@@ -65,78 +57,90 @@ class WhatsAppNotificationListener : NotificationListenerService() {
 
         val extras = sbn.notification.extras ?: return
         val title = extras.getString(Notification.EXTRA_TITLE) ?: return
-        val text = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString() ?: return
-
-        // LOG DETALHADO para debug
         val flags = sbn.notification.flags
-        val hasActions = sbn.notification.actions?.size ?: 0
-        val isOngoing = flags and Notification.FLAG_ONGOING_EVENT != 0
-        Log.d(TAG, ">>> NOTIF: title='$title' text='${text.take(60)}' key=${sbn.key} flags=$flags actions=$hasActions ongoing=$isOngoing tag=${sbn.tag}")
 
-        if (text.isBlank() || text.length < 2) return
+        // Ignorar summary/agrupadas
+        if (flags and Notification.FLAG_GROUP_SUMMARY != 0) return
 
-        // Ignorar notificações de summary/agrupadas (ex: "2 novas mensagens")
-        if (flags and Notification.FLAG_GROUP_SUMMARY != 0) {
-            Log.d(TAG, "SKIP: group summary notification")
+        // Ignorar grupo
+        if (extras.getBoolean(Notification.EXTRA_IS_GROUP_CONVERSATION, false)) return
+
+        // ===== EXTRAIR MENSAGEM VIA MessagingStyle (EXTRA_MESSAGES) =====
+        var messageText: String? = null
+        var messageTime: Long = 0
+        var isFromContact = false
+
+        @Suppress("DEPRECATION")
+        val msgArray = extras.getParcelableArray(Notification.EXTRA_MESSAGES)
+        if (msgArray != null && msgArray.isNotEmpty()) {
+            val lastMsg = msgArray.last() as? Bundle
+            if (lastMsg != null) {
+                val sender = lastMsg.getCharSequence("sender")
+                messageText = lastMsg.getCharSequence("text")?.toString()
+                messageTime = lastMsg.getLong("time", 0L)
+                // sender == null → mensagem enviada por MIM (bot) → ignorar
+                // sender != null → mensagem do CONTATO → processar
+                isFromContact = sender != null
+                Log.d(TAG, ">>> MSG_STYLE: title='$title' sender='$sender' text='${messageText?.take(50)}' time=$messageTime from_contact=$isFromContact")
+            }
+        }
+
+        // Fallback: se EXTRA_MESSAGES não disponível, usar EXTRA_TEXT
+        if (messageText == null) {
+            messageText = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()
+            messageTime = sbn.postTime
+            // No fallback, assumir que é do contato MAS verificar via isProcessing
+            isFromContact = true
+            Log.d(TAG, ">>> FALLBACK: title='$title' text='${messageText?.take(50)}' time=$messageTime")
+        }
+
+        if (messageText.isNullOrBlank() || messageText.length < 2) return
+
+        // ===== FILTRO 1: Ignorar mensagens "de mim" (respostas do bot) =====
+        if (!isFromContact) {
+            Log.d(TAG, "SKIP: from_me (bot reply) for $title")
             return
         }
 
-        // Ignorar mensagens de grupo
-        val isGroupMessage = extras.getBoolean(Notification.EXTRA_IS_GROUP_CONVERSATION, false)
-        if (isGroupMessage) {
-            Log.d(TAG, "SKIP: group message from $title")
+        // ===== FILTRO 2: Verificar se já processamos esta mensagem pelo timestamp =====
+        if (messageTime > 0) {
+            val lastProcessed = lastProcessedTimestamp[title] ?: 0L
+            if (messageTime <= lastProcessed) {
+                Log.d(TAG, "SKIP: already processed ts=$messageTime for $title")
+                return
+            }
+        }
+
+        // ===== FILTRO 3: Bloqueio atômico — evitar processamentos paralelos =====
+        if (isProcessing.putIfAbsent(title, true) != null) {
+            Log.d(TAG, "SKIP: already processing for $title")
             return
         }
 
-        // BLOQUEIO PRINCIPAL: se já estamos processando uma msg deste contato, ignorar TUDO
-        if (isProcessing[title] == true) {
-            Log.d(TAG, "SKIP: already processing message for $title")
-            return
+        // Registrar timestamp processado
+        if (messageTime > 0) {
+            lastProcessedTimestamp[title] = messageTime
         }
 
-        // Ignorar notificações que chegam logo após enviarmos uma resposta
-        val now = System.currentTimeMillis()
-        val lastSent = lastSentTime[title] ?: 0L
-        if (now - lastSent < POST_REPLY_BLOCK_MS) {
-            Log.d(TAG, "SKIP: post-reply block for $title (${now - lastSent}ms after send)")
-            return
-        }
-
-        // Cooldown: ignorar mensagens do mesmo contato dentro de COOLDOWN_MS
-        val lastReply = lastReplyTime[title] ?: 0L
-        if (now - lastReply < COOLDOWN_MS) {
-            Log.d(TAG, "SKIP: cooldown for $title (${(now - lastReply) / 1000}s ago)")
-            return
-        }
-
-        // Dedup: ignorar mensagem idêntica do mesmo contato dentro de DEDUP_WINDOW_MS
-        val dedupKey = "${title}:${text.trim().lowercase().take(100)}"
-        val lastSeen = recentMessages.put(dedupKey, now)
-        if (lastSeen != null && (now - lastSeen) < DEDUP_WINDOW_MS) {
-            Log.d(TAG, "SKIP: duplicate message from $title")
-            return
-        }
-
-        // Verificar se tem ação de reply disponível
+        // Verificar reply action
         val replyAction = sbn.notification.actions?.find { action ->
             action.remoteInputs?.isNotEmpty() == true
-        } ?: return
+        }
+        if (replyAction == null) {
+            isProcessing.remove(title)
+            return
+        }
 
-        // MARCAR COMO PROCESSANDO antes de tudo (bloqueia qualquer notificação adicional)
-        isProcessing[title] = true
-        lastReplyTime[title] = now
-
-        Log.i(TAG, "=== ACCEPTED: $title msg='${text.take(50)}'")
+        Log.i(TAG, "=== ACCEPTED: $title msg='${messageText.take(50)}' ts=$messageTime")
 
         scope.launch {
             try {
-                processMessage(title, text, replyAction, sbn)
+                processMessage(title, messageText, replyAction, sbn)
             } catch (e: Exception) {
                 Log.e(TAG, "Error processing message", e)
                 NotificationBridge.sendError(this@WhatsAppNotificationListener, e.message ?: "Unknown error")
             } finally {
-                // Manter isProcessing=true por mais POST_REPLY_BLOCK_MS após terminar
-                // para bloquear a notificação que o WhatsApp gera após o envio
+                // Manter bloqueio por POST_REPLY_BLOCK_MS para absorver notificações pós-envio
                 delay(POST_REPLY_BLOCK_MS)
                 isProcessing.remove(title)
                 Log.d(TAG, "=== UNLOCKED: $title")
@@ -210,12 +214,6 @@ class WhatsAppNotificationListener : NotificationListenerService() {
             return
         }
 
-        // Marcar timestamp de envio ANTES de enviar (bloqueia notificações próprias)
-        lastSentTime[sender] = System.currentTimeMillis()
-
-        // Atualizar cooldown com timestamp real do envio
-        lastReplyTime[sender] = System.currentTimeMillis()
-
         // Enviar resposta via WhatsApp
         val intent = Intent()
         val bundle = Bundle()
@@ -228,7 +226,7 @@ class WhatsAppNotificationListener : NotificationListenerService() {
         cancelNotification(sbn.key)
         Log.i(TAG, "Replied to $sender: ${reply.take(50)}...")
 
-        // Limpar entradas antigas após 120s
+        // Limpar entradas antigas periodicamente
         scope.launch {
             delay(120_000)
             cleanupOldEntries()
@@ -256,10 +254,8 @@ class WhatsAppNotificationListener : NotificationListenerService() {
     }
 
     private fun cleanupOldEntries() {
-        val cutoff = System.currentTimeMillis() - 120_000L
-        recentMessages.entries.removeAll { it.value < cutoff }
-        lastReplyTime.entries.removeAll { it.value < cutoff }
-        lastSentTime.entries.removeAll { it.value < cutoff }
+        val cutoff = System.currentTimeMillis() - 300_000L
+        lastProcessedTimestamp.entries.removeAll { it.value < cutoff }
     }
 
     override fun onDestroy() {
