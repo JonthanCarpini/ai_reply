@@ -11,6 +11,9 @@ use App\Http\Controllers\Api\PanelConfigController;
 use App\Http\Controllers\Api\PromptController;
 use App\Http\Controllers\Api\RuleController;
 use App\Http\Controllers\Api\SyncController;
+use App\Http\Controllers\Admin\AdminUserController;
+use App\Http\Controllers\Admin\AdminPlanController;
+use App\Http\Controllers\Admin\AdminSubscriptionController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\LogoutController;
 use App\Http\Controllers\Auth\MeController;
@@ -93,4 +96,29 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/billing/change-plan', [BillingController::class, 'changePlan']);
     Route::post('/billing/cancel', [BillingController::class, 'cancel']);
     Route::get('/billing/invoices', [BillingController::class, 'invoices']);
+});
+
+// ── Admin ────────────────────────────────────────────────
+Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function () {
+
+    // Dashboard Admin
+    Route::get('/stats', [AdminUserController::class, 'stats']);
+
+    // Usuários
+    Route::get('/users', [AdminUserController::class, 'index']);
+    Route::get('/users/{id}', [AdminUserController::class, 'show']);
+    Route::put('/users/{id}', [AdminUserController::class, 'update']);
+    Route::delete('/users/{id}', [AdminUserController::class, 'destroy']);
+
+    // Planos
+    Route::get('/plans', [AdminPlanController::class, 'index']);
+    Route::post('/plans', [AdminPlanController::class, 'store']);
+    Route::put('/plans/{id}', [AdminPlanController::class, 'update']);
+    Route::delete('/plans/{id}', [AdminPlanController::class, 'destroy']);
+
+    // Assinaturas
+    Route::get('/subscriptions', [AdminSubscriptionController::class, 'index']);
+    Route::post('/subscriptions', [AdminSubscriptionController::class, 'store']);
+    Route::put('/subscriptions/{id}', [AdminSubscriptionController::class, 'update']);
+    Route::delete('/subscriptions/{id}', [AdminSubscriptionController::class, 'destroy']);
 });

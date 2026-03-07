@@ -4,7 +4,29 @@ export interface User {
   email: string;
   phone: string | null;
   status: string;
+  is_admin: boolean;
   subscription?: Subscription;
+}
+
+export interface AdminUser extends User {
+  messages_this_month?: number;
+  created_at?: string;
+}
+
+export interface AdminStats {
+  total_users: number;
+  active_users: number;
+  admins: number;
+  messages_this_month: number;
+  messages_today: number;
+}
+
+export interface PaginatedResponse<T> {
+  data: T[];
+  current_page: number;
+  last_page: number;
+  per_page: number;
+  total: number;
 }
 
 export interface Plan {
