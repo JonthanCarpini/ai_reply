@@ -16,7 +16,7 @@ class MessageController extends Controller
     public function process(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'contact_phone' => ['required', 'string', 'max:20'],
+            'contact_phone' => ['required', 'string', 'max:255'],
             'contact_name' => ['nullable', 'string', 'max:255'],
             'message' => ['required', 'string', 'max:5000'],
             'whatsapp_number' => ['nullable', 'string', 'max:20'],

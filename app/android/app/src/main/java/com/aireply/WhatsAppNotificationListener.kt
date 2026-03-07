@@ -44,20 +44,49 @@ class WhatsAppNotificationListener : NotificationListenerService() {
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
-        if (sbn.packageName !in getAllowedPackages()) return
+        Log.d(TAG, "Notification from: ${sbn.packageName}")
 
-        val extras = sbn.notification.extras ?: return
-        val title = extras.getString(Notification.EXTRA_TITLE) ?: return
-        val text = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString() ?: return
+        val allowedPackages = getAllowedPackages()
+        if (sbn.packageName !in allowedPackages) {
+            Log.d(TAG, "SKIP: package ${sbn.packageName} not in allowed: $allowedPackages")
+            return
+        }
 
-        if (text.contains(":") && !title.contains("+")) return
-        if (text.isBlank() || text.length < 2) return
+        val extras = sbn.notification.extras ?: run {
+            Log.d(TAG, "SKIP: no extras")
+            return
+        }
+        val title = extras.getString(Notification.EXTRA_TITLE) ?: run {
+            Log.d(TAG, "SKIP: no title")
+            return
+        }
+        val text = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString() ?: run {
+            Log.d(TAG, "SKIP: no text for title=$title")
+            return
+        }
+
+        Log.d(TAG, "Notification: title=$title text=$text")
+
+        // Filtrar mensagens de grupo (formato "Fulano: mensagem" no text COM título de grupo)
+        val isGroupMessage = extras.getBoolean(Notification.EXTRA_IS_GROUP_CONVERSATION, false)
+        if (isGroupMessage) {
+            Log.d(TAG, "SKIP: group message from $title")
+            return
+        }
+
+        if (text.isBlank() || text.length < 2) {
+            Log.d(TAG, "SKIP: text too short")
+            return
+        }
 
         val replyAction = sbn.notification.actions?.find { action ->
             action.remoteInputs?.isNotEmpty() == true
-        } ?: return
+        } ?: run {
+            Log.d(TAG, "SKIP: no reply action for $title (actions=${sbn.notification.actions?.size ?: 0})")
+            return
+        }
 
-        Log.d(TAG, "Message from $title: $text")
+        Log.i(TAG, "Processing message from $title: ${text.take(50)}")
 
         scope.launch {
             try {
@@ -82,7 +111,8 @@ class WhatsAppNotificationListener : NotificationListenerService() {
         }
         val apiUrl = prefs.getString("api_url", "https://api.aireply.xpainel.online/api") ?: return
 
-        val phone = extractPhone(sbn)
+        val phone = extractPhone(sbn).ifEmpty { sender }
+        Log.d(TAG, "Sending to API: phone=$phone sender=$sender msg=${message.take(30)}")
 
         val url = URL("$apiUrl/messages/process")
         val conn = url.openConnection() as HttpURLConnection
@@ -98,16 +128,16 @@ class WhatsAppNotificationListener : NotificationListenerService() {
             put("contact_name", sender)
             put("contact_phone", phone)
             put("message", message)
-            put("source", "whatsapp")
         }
 
+        Log.d(TAG, "Request body: $body")
         OutputStreamWriter(conn.outputStream).use { it.write(body.toString()) }
 
         val responseCode = conn.responseCode
         if (responseCode != 200) {
             val errorBody = conn.errorStream?.bufferedReader()?.readText() ?: "No error body"
             Log.e(TAG, "API error $responseCode: $errorBody")
-            NotificationBridge.sendError(this, "API error: $responseCode")
+            NotificationBridge.sendError(this, "API error: $responseCode - $errorBody")
             return
         }
 
@@ -132,9 +162,28 @@ class WhatsAppNotificationListener : NotificationListenerService() {
     }
 
     private fun extractPhone(sbn: StatusBarNotification): String {
-        val key = sbn.key ?: ""
         val phoneRegex = Regex("\\+?\\d{10,15}")
-        return phoneRegex.find(key)?.value ?: ""
+
+        // Try notification key first
+        val key = sbn.key ?: ""
+        phoneRegex.find(key)?.value?.let { return it }
+
+        // Try tag
+        sbn.tag?.let { tag ->
+            phoneRegex.find(tag)?.value?.let { return it }
+        }
+
+        // Try extras for android.conversationTitle or other fields
+        val extras = sbn.notification.extras
+        val convTitle = extras?.getString("android.conversationTitle") ?: ""
+        phoneRegex.find(convTitle)?.value?.let { return it }
+
+        // Try title (contact name may have phone)
+        val title = extras?.getString(Notification.EXTRA_TITLE) ?: ""
+        phoneRegex.find(title)?.value?.let { return it }
+
+        Log.d(TAG, "Could not extract phone from notification. key=$key tag=${sbn.tag}")
+        return ""
     }
 
     override fun onDestroy() {
