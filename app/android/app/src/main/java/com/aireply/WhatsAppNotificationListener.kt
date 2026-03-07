@@ -22,6 +22,7 @@ class WhatsAppNotificationListener : NotificationListenerService() {
         private val DEFAULT_PACKAGES = setOf("com.whatsapp", "com.whatsapp.w4b")
         private const val COOLDOWN_MS = 30_000L
         private const val DEDUP_WINDOW_MS = 5_000L
+        private const val POST_REPLY_BLOCK_MS = 4_000L
         var isRunning = false
             private set
     }
@@ -31,14 +32,17 @@ class WhatsAppNotificationListener : NotificationListenerService() {
     // Cooldown: contato → timestamp da última resposta enviada
     private val lastReplyTime = ConcurrentHashMap<String, Long>()
 
+    // Timestamp do último envio de resposta por contato (para bloquear notificações próprias)
+    private val lastSentTime = ConcurrentHashMap<String, Long>()
+
     // Mutex por contato: evita processar 2 mensagens do mesmo contato em paralelo
     private val contactMutex = ConcurrentHashMap<String, Mutex>()
 
     // Dedup: chave(contato+msg) → timestamp — evita processar mesma msg 2x
     private val recentMessages = ConcurrentHashMap<String, Long>()
 
-    // Mensagens enviadas pelo próprio bot (para ignorar notificações de respostas próprias)
-    private val sentReplies = ConcurrentHashMap.newKeySet<String>()
+    // Contato → último sbn.key processado (para ignorar re-posts da mesma notificação)
+    private val lastNotificationKey = ConcurrentHashMap<String, String>()
 
     private fun getAllowedPackages(): Set<String> {
         val prefs = getSharedPreferences("ai_reply_prefs", MODE_PRIVATE)
@@ -82,15 +86,23 @@ class WhatsAppNotificationListener : NotificationListenerService() {
             return
         }
 
-        // Ignorar se é uma resposta que nós mesmos enviamos
-        val textKey = "${title}:${text.take(80)}"
-        if (sentReplies.remove(textKey)) {
-            Log.d(TAG, "SKIP: own reply to $title")
+        // Ignorar notificações que chegam logo após enviarmos uma resposta (são nossas próprias respostas)
+        val now = System.currentTimeMillis()
+        val lastSent = lastSentTime[title] ?: 0L
+        if (now - lastSent < POST_REPLY_BLOCK_MS) {
+            Log.d(TAG, "SKIP: post-reply block active for $title (${now - lastSent}ms after send)")
+            return
+        }
+
+        // Ignorar re-post da mesma notificação (WhatsApp atualiza notificações existentes)
+        val nKey = sbn.key + ":" + text.hashCode()
+        val prevKey = lastNotificationKey.put(title, nKey)
+        if (prevKey == nKey) {
+            Log.d(TAG, "SKIP: same notification re-posted for $title")
             return
         }
 
         // Dedup: ignorar mensagem idêntica do mesmo contato dentro de DEDUP_WINDOW_MS
-        val now = System.currentTimeMillis()
         val dedupKey = "${title}:${text.trim().lowercase().take(100)}"
         val lastSeen = recentMessages.put(dedupKey, now)
         if (lastSeen != null && (now - lastSeen) < DEDUP_WINDOW_MS) {
@@ -202,9 +214,8 @@ class WhatsAppNotificationListener : NotificationListenerService() {
             return
         }
 
-        // Registrar resposta antes de enviar (para ignorar a notificação de retorno)
-        val replyKey = "${sender}:${reply.take(80)}"
-        sentReplies.add(replyKey)
+        // Marcar timestamp de envio ANTES de enviar (bloqueia notificações próprias)
+        lastSentTime[sender] = System.currentTimeMillis()
 
         // Atualizar cooldown com timestamp real do envio
         lastReplyTime[sender] = System.currentTimeMillis()
@@ -221,10 +232,9 @@ class WhatsAppNotificationListener : NotificationListenerService() {
         cancelNotification(sbn.key)
         Log.i(TAG, "Replied to $sender: ${reply.take(50)}...")
 
-        // Limpar sentReplies e recentMessages antigos após 60s
+        // Limpar entradas antigas após 120s
         scope.launch {
-            delay(60_000)
-            sentReplies.remove(replyKey)
+            delay(120_000)
             cleanupOldEntries()
         }
     }
@@ -253,8 +263,10 @@ class WhatsAppNotificationListener : NotificationListenerService() {
         val cutoff = System.currentTimeMillis() - 120_000L
         recentMessages.entries.removeAll { it.value < cutoff }
         lastReplyTime.entries.removeAll { it.value < cutoff }
-        // Remover mutexes de contatos inativos
+        lastSentTime.entries.removeAll { it.value < cutoff }
+        // Remover mutexes de contatos inativos e keys antigos
         contactMutex.entries.removeAll { !it.value.isLocked }
+        // lastNotificationKey não precisa de limpeza agressiva (1 entry por contato)
     }
 
     override fun onDestroy() {
