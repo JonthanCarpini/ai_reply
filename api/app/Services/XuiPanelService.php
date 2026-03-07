@@ -12,11 +12,13 @@ class XuiPanelService
 {
     private string $baseUrl;
     private string $apiKey;
+    private ?int $defaultTestPackageId;
 
     public function __construct(PanelConfig $panelConfig)
     {
         $this->baseUrl = rtrim($panelConfig->panel_url, '/');
         $this->apiKey = $panelConfig->getDecryptedApiKey();
+        $this->defaultTestPackageId = $panelConfig->default_test_package_id;
     }
 
     public function criarTeste(array $params): ActionResult
@@ -27,7 +29,13 @@ class XuiPanelService
         $password = $params['password'] ?? (string) random_int(100000, 999999);
         $packageId = $params['package_id'] ?? null;
 
-        // Se package_id não foi informado, buscar automaticamente
+        // Se package_id não foi informado, usar o configurado pelo usuário
+        if (!$packageId && $this->defaultTestPackageId) {
+            $packageId = $this->defaultTestPackageId;
+            Log::info('[XuiPanel] Usando pacote de teste configurado', ['package_id' => $packageId]);
+        }
+
+        // Se ainda não tem, buscar automaticamente (priorizar is_trial)
         if (!$packageId) {
             $packageId = $this->resolveDefaultPackageId();
         }
@@ -107,43 +115,67 @@ class XuiPanelService
     }
 
     /**
-     * Busca o primeiro pacote disponível para usar como padrão em testes.
+     * Busca pacotes e prioriza is_trial para usar como padrão em testes.
      */
     private function resolveDefaultPackageId(): ?int
+    {
+        $packages = $this->fetchPackages();
+
+        if (empty($packages)) {
+            Log::warning('[XuiPanel] Nenhum pacote disponível para auto-select');
+            return null;
+        }
+
+        // Priorizar pacotes com is_trial = true
+        $trialPackage = collect($packages)->first(fn($p) => !empty($p['is_trial']));
+        if ($trialPackage) {
+            $id = $trialPackage['id'] ?? $trialPackage['package_id'] ?? null;
+            Log::info('[XuiPanel] Auto-selected TRIAL package', [
+                'package_id' => $id,
+                'package_name' => $trialPackage['name'] ?? $trialPackage['package_name'] ?? 'N/A',
+                'trial_duration' => $trialPackage['trial_duration'] ?? 'N/A',
+            ]);
+            return $id ? (int) $id : null;
+        }
+
+        // Fallback: primeiro pacote
+        $first = reset($packages);
+        $id = $first['id'] ?? $first['package_id'] ?? null;
+
+        Log::info('[XuiPanel] Auto-selected first package (no trial found)', [
+            'package_id' => $id,
+            'package_name' => $first['name'] ?? $first['package_name'] ?? 'N/A',
+        ]);
+
+        return $id ? (int) $id : null;
+    }
+
+    /**
+     * Busca pacotes da API do painel, tratando formato IBO.
+     */
+    public function fetchPackages(): array
     {
         $response = $this->post('/api/reseller/packages', [
             'api_key' => $this->apiKey,
         ]);
 
         if (!$response['success'] || empty($response['data'])) {
-            Log::warning('[XuiPanel] Falha ao buscar pacotes para auto-select', [
-                'response' => $response,
-            ]);
-            return null;
+            return [];
         }
 
-        $packages = $response['data'];
+        $data = $response['data'];
 
-        // Se data contém 'packages', extrair
-        if (isset($packages['packages'])) {
-            $packages = $packages['packages'];
+        // A API retorna {packages: [...]} dentro do data
+        if (isset($data['packages']) && is_array($data['packages'])) {
+            return $data['packages'];
         }
 
-        if (!is_array($packages) || empty($packages)) {
-            return null;
+        // Fallback: data é array direto de pacotes
+        if (is_array($data) && isset($data[0])) {
+            return $data;
         }
 
-        // Pegar o primeiro pacote disponível
-        $first = reset($packages);
-
-        $id = $first['id'] ?? $first['package_id'] ?? null;
-
-        Log::info('[XuiPanel] Auto-selected package', [
-            'package_id' => $id,
-            'package_name' => $first['name'] ?? $first['package_name'] ?? 'N/A',
-        ]);
-
-        return $id ? (int) $id : null;
+        return [];
     }
 
     public function renovarCliente(array $params): ActionResult
@@ -220,24 +252,29 @@ class XuiPanelService
     {
         $start = hrtime(true);
 
-        $response = $this->post('/api/reseller/packages', [
-            'api_key' => $this->apiKey,
-        ]);
-
+        $packages = $this->fetchPackages();
         $latency = $this->calcLatency($start);
 
-        if (!$response['success'] || empty($response['data'])) {
+        if (empty($packages)) {
             return new ActionResult(false, errorMessage: 'Erro ao listar pacotes.', latencyMs: $latency);
         }
 
-        $packages = $response['data'];
         $lines = [];
-
         foreach ($packages as $pkg) {
-            $name = $pkg['name'] ?? 'Sem nome';
-            $price = $pkg['price'] ?? '0';
+            $name = $pkg['name'] ?? $pkg['package_name'] ?? 'Sem nome';
             $id = $pkg['id'] ?? 'N/A';
-            $lines[] = "- [{$id}] {$name} — R$ {$price}";
+            $credits = $pkg['official_credits'] ?? 0;
+            $duration = $pkg['official_duration'] ?? '';
+            $durationIn = $pkg['official_duration_in'] ?? '';
+            $connections = $pkg['max_connections'] ?? 1;
+            $isTrial = !empty($pkg['is_trial']) ? ' [TESTE]' : '';
+
+            $line = "- [{$id}] {$name}{$isTrial} — {$credits} créditos";
+            if ($duration) {
+                $line .= " | Duração: {$duration} {$durationIn}";
+            }
+            $line .= " | {$connections} conexões";
+            $lines[] = $line;
         }
 
         return new ActionResult(

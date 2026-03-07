@@ -261,10 +261,16 @@ object MediaExtractor {
     }
 
     /**
-     * Busca a imagem mais recente do WhatsApp via MediaStore.
-     * Usado como fallback quando BigPictureStyle não contém a imagem.
+     * Busca a imagem mais recente do WhatsApp.
+     * 1. Filesystem direto (MANAGE_EXTERNAL_STORAGE)
+     * 2. MediaStore (fallback)
      */
-    fun findRecentWhatsAppImage(context: Context, maxAgeMs: Long = 15_000): String? {
+    fun findRecentWhatsAppImage(context: Context, maxAgeMs: Long = 30_000): String? {
+        // Método 1: Filesystem direto
+        val fsResult = findImageViaFilesystem(maxAgeMs)
+        if (fsResult != null) return fsResult
+
+        // Método 2: MediaStore
         try {
             val uri: Uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
@@ -275,7 +281,6 @@ object MediaExtractor {
             val projection = arrayOf(
                 MediaStore.Images.Media._ID,
                 MediaStore.Images.Media.DATE_ADDED,
-                MediaStore.Images.Media.SIZE,
             )
 
             val cutoffSeconds = (System.currentTimeMillis() - maxAgeMs) / 1000
@@ -287,29 +292,71 @@ object MediaExtractor {
             )
             val sortOrder = "${MediaStore.Images.Media.DATE_ADDED} DESC"
 
-            val cursor: Cursor? = context.contentResolver.query(
-                uri, projection, selection, selectionArgs, sortOrder
-            )
-
+            val cursor = context.contentResolver.query(uri, projection, selection, selectionArgs, sortOrder)
             cursor?.use {
                 if (it.moveToFirst()) {
                     val id = it.getLong(it.getColumnIndexOrThrow(MediaStore.Images.Media._ID))
                     val imageUri = Uri.withAppendedPath(uri, id.toString())
 
-                    val inputStream = context.contentResolver.openInputStream(imageUri)
-                    inputStream?.use { stream ->
+                    context.contentResolver.openInputStream(imageUri)?.use { stream ->
                         val bitmap = BitmapFactory.decodeStream(stream)
                         if (bitmap != null) {
-                            Log.i(TAG, "Imagem encontrada via MediaStore: ${bitmap.width}x${bitmap.height}")
+                            Log.i(TAG, "Imagem via MediaStore: ${bitmap.width}x${bitmap.height}")
                             return bitmapToBase64(bitmap)
                         }
                     }
                 }
             }
-
-            Log.d(TAG, "Nenhuma imagem recente do WhatsApp encontrada")
         } catch (e: Exception) {
-            Log.e(TAG, "Erro ao buscar imagem do WhatsApp", e)
+            Log.d(TAG, "MediaStore image failed: ${e.message}")
+        }
+
+        Log.d(TAG, "Nenhuma imagem recente do WhatsApp encontrada")
+        return null
+    }
+
+    /**
+     * Busca imagem recente do WhatsApp via acesso direto ao filesystem.
+     */
+    private fun findImageViaFilesystem(maxAgeMs: Long): String? {
+        try {
+            val basePaths = listOf(
+                "/storage/emulated/0/Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Images",
+                "/storage/emulated/0/Android/media/com.whatsapp.w4b/WhatsApp Business/Media/WhatsApp Images",
+                "/storage/emulated/0/WhatsApp/Media/WhatsApp Images",
+            )
+
+            val cutoff = System.currentTimeMillis() - maxAgeMs
+            var newestFile: java.io.File? = null
+            var newestTime = 0L
+
+            for (basePath in basePaths) {
+                val dir = java.io.File(basePath)
+                if (!dir.exists() || !dir.canRead()) continue
+
+                val files = dir.walkTopDown()
+                    .maxDepth(2)
+                    .filter { it.isFile && it.lastModified() > cutoff }
+                    .filter { it.extension.lowercase() in listOf("jpg", "jpeg", "png", "webp") }
+                    .toList()
+
+                for (file in files) {
+                    if (file.lastModified() > newestTime) {
+                        newestTime = file.lastModified()
+                        newestFile = file
+                    }
+                }
+            }
+
+            if (newestFile != null) {
+                val bitmap = BitmapFactory.decodeFile(newestFile.absolutePath)
+                if (bitmap != null) {
+                    Log.i(TAG, "Imagem via filesystem: ${newestFile.absolutePath} (${bitmap.width}x${bitmap.height})")
+                    return bitmapToBase64(bitmap)
+                }
+            }
+        } catch (e: Exception) {
+            Log.d(TAG, "Filesystem image failed: ${e.message}")
         }
         return null
     }

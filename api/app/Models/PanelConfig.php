@@ -15,6 +15,7 @@ class PanelConfig extends Model
         'is_active',
         'last_verified_at',
         'status',
+        'default_test_package_id',
     ];
 
     protected $hidden = [

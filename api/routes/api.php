@@ -47,6 +47,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/panel', [PanelConfigController::class, 'index']);
     Route::post('/panel', [PanelConfigController::class, 'store']);
     Route::post('/panel/test', [PanelConfigController::class, 'test']);
+    Route::get('/panel/{id}/packages', [PanelConfigController::class, 'packages']);
+    Route::put('/panel/{id}/test-package', [PanelConfigController::class, 'updateTestPackage']);
     Route::delete('/panel/{id}', [PanelConfigController::class, 'destroy']);
 
     // IA Config

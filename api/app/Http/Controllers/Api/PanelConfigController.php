@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\PanelConfig;
+use App\Services\XuiPanelService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
@@ -22,6 +23,7 @@ class PanelConfigController extends Controller
                 'status' => $c->status,
                 'last_verified_at' => $c->last_verified_at?->toIso8601String(),
                 'has_api_key' => !empty($c->getRawOriginal('api_key_encrypted')),
+                'default_test_package_id' => $c->default_test_package_id,
             ];
         });
 
@@ -165,6 +167,48 @@ class PanelConfigController extends Controller
             Log::error('[PanelTest] Exceção', ['error' => $e->getMessage()]);
             return response()->json(['success' => false, 'message' => 'Erro ao conectar: ' . $e->getMessage()], 422);
         }
+    }
+
+    /**
+     * GET /api/panel-config/{id}/packages
+     * Lista pacotes disponíveis no painel XUI conectado.
+     */
+    public function packages(Request $request, int $id): JsonResponse
+    {
+        $config = $request->user()->panelConfigs()->findOrFail($id);
+
+        if ($config->status !== 'connected') {
+            return response()->json(['error' => 'Painel não conectado.'], 422);
+        }
+
+        try {
+            $service = new XuiPanelService($config);
+            $packages = $service->fetchPackages();
+
+            return response()->json(['data' => $packages]);
+        } catch (\Exception $e) {
+            Log::error('[PanelConfig] Erro ao listar pacotes', ['error' => $e->getMessage()]);
+            return response()->json(['error' => 'Erro ao buscar pacotes: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * PUT /api/panel-config/{id}/test-package
+     * Salva o pacote padrão de teste.
+     */
+    public function updateTestPackage(Request $request, int $id): JsonResponse
+    {
+        $validated = $request->validate([
+            'default_test_package_id' => ['nullable', 'integer'],
+        ]);
+
+        $config = $request->user()->panelConfigs()->findOrFail($id);
+        $config->update(['default_test_package_id' => $validated['default_test_package_id']]);
+
+        return response()->json([
+            'message' => 'Pacote de teste atualizado.',
+            'default_test_package_id' => $config->default_test_package_id,
+        ]);
     }
 
     public function destroy(Request $request, int $id): JsonResponse
