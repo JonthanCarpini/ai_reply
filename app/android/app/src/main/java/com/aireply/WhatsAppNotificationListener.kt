@@ -8,7 +8,6 @@ import android.service.notification.StatusBarNotification
 import android.util.Log
 import android.app.RemoteInput
 import kotlinx.coroutines.*
-import kotlinx.coroutines.sync.Mutex
 import org.json.JSONObject
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
@@ -35,14 +34,11 @@ class WhatsAppNotificationListener : NotificationListenerService() {
     // Timestamp do último envio de resposta por contato (para bloquear notificações próprias)
     private val lastSentTime = ConcurrentHashMap<String, Long>()
 
-    // Mutex por contato: evita processar 2 mensagens do mesmo contato em paralelo
-    private val contactMutex = ConcurrentHashMap<String, Mutex>()
-
     // Dedup: chave(contato+msg) → timestamp — evita processar mesma msg 2x
     private val recentMessages = ConcurrentHashMap<String, Long>()
 
-    // Contato → último sbn.key processado (para ignorar re-posts da mesma notificação)
-    private val lastNotificationKey = ConcurrentHashMap<String, String>()
+    // Contato → flag de processamento ativo (impede qualquer nova notificação de ser aceita)
+    private val isProcessing = ConcurrentHashMap<String, Boolean>()
 
     private fun getAllowedPackages(): Set<String> {
         val prefs = getSharedPreferences("ai_reply_prefs", MODE_PRIVATE)
@@ -71,10 +67,16 @@ class WhatsAppNotificationListener : NotificationListenerService() {
         val title = extras.getString(Notification.EXTRA_TITLE) ?: return
         val text = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString() ?: return
 
+        // LOG DETALHADO para debug
+        val flags = sbn.notification.flags
+        val hasActions = sbn.notification.actions?.size ?: 0
+        val isOngoing = flags and Notification.FLAG_ONGOING_EVENT != 0
+        Log.d(TAG, ">>> NOTIF: title='$title' text='${text.take(60)}' key=${sbn.key} flags=$flags actions=$hasActions ongoing=$isOngoing tag=${sbn.tag}")
+
         if (text.isBlank() || text.length < 2) return
 
         // Ignorar notificações de summary/agrupadas (ex: "2 novas mensagens")
-        if (sbn.notification.flags and Notification.FLAG_GROUP_SUMMARY != 0) {
+        if (flags and Notification.FLAG_GROUP_SUMMARY != 0) {
             Log.d(TAG, "SKIP: group summary notification")
             return
         }
@@ -86,19 +88,24 @@ class WhatsAppNotificationListener : NotificationListenerService() {
             return
         }
 
-        // Ignorar notificações que chegam logo após enviarmos uma resposta (são nossas próprias respostas)
-        val now = System.currentTimeMillis()
-        val lastSent = lastSentTime[title] ?: 0L
-        if (now - lastSent < POST_REPLY_BLOCK_MS) {
-            Log.d(TAG, "SKIP: post-reply block active for $title (${now - lastSent}ms after send)")
+        // BLOQUEIO PRINCIPAL: se já estamos processando uma msg deste contato, ignorar TUDO
+        if (isProcessing[title] == true) {
+            Log.d(TAG, "SKIP: already processing message for $title")
             return
         }
 
-        // Ignorar re-post da mesma notificação (WhatsApp atualiza notificações existentes)
-        val nKey = sbn.key + ":" + text.hashCode()
-        val prevKey = lastNotificationKey.put(title, nKey)
-        if (prevKey == nKey) {
-            Log.d(TAG, "SKIP: same notification re-posted for $title")
+        // Ignorar notificações que chegam logo após enviarmos uma resposta
+        val now = System.currentTimeMillis()
+        val lastSent = lastSentTime[title] ?: 0L
+        if (now - lastSent < POST_REPLY_BLOCK_MS) {
+            Log.d(TAG, "SKIP: post-reply block for $title (${now - lastSent}ms after send)")
+            return
+        }
+
+        // Cooldown: ignorar mensagens do mesmo contato dentro de COOLDOWN_MS
+        val lastReply = lastReplyTime[title] ?: 0L
+        if (now - lastReply < COOLDOWN_MS) {
+            Log.d(TAG, "SKIP: cooldown for $title (${(now - lastReply) / 1000}s ago)")
             return
         }
 
@@ -106,44 +113,33 @@ class WhatsAppNotificationListener : NotificationListenerService() {
         val dedupKey = "${title}:${text.trim().lowercase().take(100)}"
         val lastSeen = recentMessages.put(dedupKey, now)
         if (lastSeen != null && (now - lastSeen) < DEDUP_WINDOW_MS) {
-            Log.d(TAG, "SKIP: duplicate message from $title within ${DEDUP_WINDOW_MS}ms")
+            Log.d(TAG, "SKIP: duplicate message from $title")
             return
         }
-
-        // Cooldown: ignorar mensagens do mesmo contato dentro de COOLDOWN_MS
-        val lastReply = lastReplyTime[title] ?: 0L
-        if (now - lastReply < COOLDOWN_MS) {
-            Log.d(TAG, "SKIP: cooldown active for $title (${(now - lastReply) / 1000}s ago)")
-            return
-        }
-
-        // Marcar cooldown IMEDIATAMENTE para evitar race condition
-        lastReplyTime[title] = now
 
         // Verificar se tem ação de reply disponível
         val replyAction = sbn.notification.actions?.find { action ->
             action.remoteInputs?.isNotEmpty() == true
-        }
-        if (replyAction == null) {
-            // Reverter cooldown se não há como responder
-            lastReplyTime[title] = lastReply
-            return
-        }
+        } ?: return
 
-        Log.i(TAG, "Processing message from $title: ${text.take(50)}")
+        // MARCAR COMO PROCESSANDO antes de tudo (bloqueia qualquer notificação adicional)
+        isProcessing[title] = true
+        lastReplyTime[title] = now
 
-        // Obter ou criar mutex para este contato
-        val mutex = contactMutex.getOrPut(title) { Mutex() }
+        Log.i(TAG, "=== ACCEPTED: $title msg='${text.take(50)}'")
 
         scope.launch {
-            mutex.lock()
             try {
                 processMessage(title, text, replyAction, sbn)
             } catch (e: Exception) {
                 Log.e(TAG, "Error processing message", e)
                 NotificationBridge.sendError(this@WhatsAppNotificationListener, e.message ?: "Unknown error")
             } finally {
-                mutex.unlock()
+                // Manter isProcessing=true por mais POST_REPLY_BLOCK_MS após terminar
+                // para bloquear a notificação que o WhatsApp gera após o envio
+                delay(POST_REPLY_BLOCK_MS)
+                isProcessing.remove(title)
+                Log.d(TAG, "=== UNLOCKED: $title")
             }
         }
     }
@@ -264,9 +260,6 @@ class WhatsAppNotificationListener : NotificationListenerService() {
         recentMessages.entries.removeAll { it.value < cutoff }
         lastReplyTime.entries.removeAll { it.value < cutoff }
         lastSentTime.entries.removeAll { it.value < cutoff }
-        // Remover mutexes de contatos inativos e keys antigos
-        contactMutex.entries.removeAll { !it.value.isLocked }
-        // lastNotificationKey não precisa de limpeza agressiva (1 entry por contato)
     }
 
     override fun onDestroy() {
