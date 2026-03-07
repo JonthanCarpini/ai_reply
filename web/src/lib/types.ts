@@ -60,6 +60,20 @@ export interface PanelConfig {
   status: 'connected' | 'error' | 'untested';
   last_verified_at: string | null;
   has_api_key: boolean;
+  default_test_package_id: number | null;
+}
+
+export interface PanelPackage {
+  id: number;
+  name: string;
+  official_credits: number;
+  trial_credits: number;
+  official_duration: number | null;
+  official_duration_in: string | null;
+  trial_duration: number | null;
+  trial_duration_in: string | null;
+  max_connections: number;
+  is_trial?: boolean;
 }
 
 export interface AiConfig {
