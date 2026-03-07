@@ -32,6 +32,9 @@ import {
   LogOut,
   ChevronUp,
   ArrowLeft,
+  Bot,
+  Brain,
+  MessageSquare,
 } from "lucide-react";
 
 const adminItems = [
@@ -39,6 +42,12 @@ const adminItems = [
   { title: "Usuários", url: "/admin/users", icon: Users },
   { title: "Planos", url: "/admin/plans", icon: Package },
   { title: "Assinaturas", url: "/admin/subscriptions", icon: CreditCard },
+];
+
+const jarbsItems = [
+  { title: "AI Providers", url: "/admin/ai-configs", icon: Bot },
+  { title: "Knowledge Base", url: "/admin/ai-knowledge", icon: Brain },
+  { title: "Conversas", url: "/admin/conversations", icon: MessageSquare },
 ];
 
 export function AdminSidebar() {
@@ -74,6 +83,24 @@ export function AdminSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               {adminItems.map((item) => (
+                <SidebarMenuItem key={item.url}>
+                  <SidebarMenuButton asChild isActive={pathname === item.url}>
+                    <Link href={item.url}>
+                      <item.icon className="h-4 w-4" />
+                      <span>{item.title}</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarGroup>
+          <SidebarGroupLabel>Jarbs (IA)</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {jarbsItems.map((item) => (
                 <SidebarMenuItem key={item.url}>
                   <SidebarMenuButton asChild isActive={pathname === item.url}>
                     <Link href={item.url}>

@@ -16,6 +16,8 @@ class AIProviderFactory
             'openai' => new OpenAIProvider($apiKey),
             'anthropic' => new AnthropicProvider($apiKey),
             'google' => new GoogleProvider($apiKey),
+            'groq' => new OpenAIProvider($apiKey, 'https://api.groq.com/openai/v1', 'groq'),
+            'mistral' => new OpenAIProvider($apiKey, 'https://api.mistral.ai/v1', 'mistral'),
             default => throw new InvalidArgumentException("Provider desconhecido: {$provider}"),
         };
     }

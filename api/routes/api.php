@@ -14,6 +14,10 @@ use App\Http\Controllers\Api\SyncController;
 use App\Http\Controllers\Admin\AdminUserController;
 use App\Http\Controllers\Admin\AdminPlanController;
 use App\Http\Controllers\Admin\AdminSubscriptionController;
+use App\Http\Controllers\Admin\AdminAiConfigController;
+use App\Http\Controllers\Admin\AdminAiKnowledgeController;
+use App\Http\Controllers\Admin\AdminConversationsController;
+use App\Http\Controllers\Api\JarbsController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\LogoutController;
 use App\Http\Controllers\Auth\MeController;
@@ -96,6 +100,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/billing/change-plan', [BillingController::class, 'changePlan']);
     Route::post('/billing/cancel', [BillingController::class, 'cancel']);
     Route::get('/billing/invoices', [BillingController::class, 'invoices']);
+
+    // Jarbs (Assistente IA do Admin)
+    Route::get('/jarbs/status', [JarbsController::class, 'status']);
+    Route::post('/jarbs/generate', [JarbsController::class, 'generate']);
+    Route::post('/jarbs/improve', [JarbsController::class, 'improve']);
 });
 
 // ── Admin ────────────────────────────────────────────────
@@ -121,4 +130,23 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     Route::post('/subscriptions', [AdminSubscriptionController::class, 'store']);
     Route::put('/subscriptions/{id}', [AdminSubscriptionController::class, 'update']);
     Route::delete('/subscriptions/{id}', [AdminSubscriptionController::class, 'destroy']);
+
+    // AI Configs (Providers do Jarbs)
+    Route::get('/ai-configs', [AdminAiConfigController::class, 'index']);
+    Route::post('/ai-configs', [AdminAiConfigController::class, 'store']);
+    Route::put('/ai-configs/{id}', [AdminAiConfigController::class, 'update']);
+    Route::delete('/ai-configs/{id}', [AdminAiConfigController::class, 'destroy']);
+    Route::post('/ai-configs/{id}/activate', [AdminAiConfigController::class, 'activate']);
+
+    // Knowledge Base (Jarbs)
+    Route::get('/ai-knowledge', [AdminAiKnowledgeController::class, 'index']);
+    Route::post('/ai-knowledge', [AdminAiKnowledgeController::class, 'store']);
+    Route::put('/ai-knowledge/{id}', [AdminAiKnowledgeController::class, 'update']);
+    Route::delete('/ai-knowledge/{id}', [AdminAiKnowledgeController::class, 'destroy']);
+    Route::post('/ai-knowledge/{id}/activate', [AdminAiKnowledgeController::class, 'activate']);
+
+    // Conversas (visualizar todas)
+    Route::get('/conversations', [AdminConversationsController::class, 'index']);
+    Route::get('/conversations/{id}', [AdminConversationsController::class, 'show']);
+    Route::get('/conversations/{id}/messages', [AdminConversationsController::class, 'messages']);
 });

@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { FileText, Plus, Loader2, Star, Pencil, Trash2 } from "lucide-react";
+import { FileText, Plus, Loader2, Star, Pencil, Trash2, Sparkles, Wand2 } from "lucide-react";
 import { toast } from "sonner";
 
 const defaultPrompt = `Você é o assistente virtual da {loja_nome}. Seu nome é {assistente_nome}.
@@ -23,6 +23,13 @@ REGRAS:
 - Quando o cliente pedir teste, crie usando a ferramenta criar_teste
 - Quando o cliente confirmar pagamento, peça o username para renovar
 - Se não souber algo, transfira para atendimento humano`;
+
+interface JarbsStatus {
+  available: boolean;
+  limit: number;
+  used: number;
+  remaining: number;
+}
 
 export default function PromptsPage() {
   const [prompts, setPrompts] = useState<Prompt[]>([]);
@@ -38,7 +45,63 @@ export default function PromptsPage() {
     offline_message: "",
   });
 
-  useEffect(() => { loadPrompts(); }, []);
+  const [jarbsStatus, setJarbsStatus] = useState<JarbsStatus | null>(null);
+  const [generating, setGenerating] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewPrompt, setPreviewPrompt] = useState("");
+  const [previewTarget, setPreviewTarget] = useState<"new" | number>("new");
+
+  useEffect(() => { loadPrompts(); loadJarbsStatus(); }, []);
+
+  async function loadJarbsStatus() {
+    try {
+      const res = await api.get("/jarbs/status");
+      setJarbsStatus(res.data);
+    } catch { /* Jarbs indisponível */ }
+  }
+
+  async function handleGenerate() {
+    setGenerating(true);
+    try {
+      const res = await api.post("/jarbs/generate", { business_description: "Revenda de IPTV com painel XUI" });
+      setPreviewPrompt(res.data.prompt);
+      setPreviewTarget("new");
+      setPreviewOpen(true);
+      loadJarbsStatus();
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { message?: string } } };
+      toast.error(error.response?.data?.message || "Erro ao gerar prompt.");
+    } finally { setGenerating(false); }
+  }
+
+  async function handleImprove(promptId: number, currentPrompt: string) {
+    setGenerating(true);
+    try {
+      const res = await api.post("/jarbs/improve", { current_prompt: currentPrompt });
+      setPreviewPrompt(res.data.prompt);
+      setPreviewTarget(promptId);
+      setPreviewOpen(true);
+      loadJarbsStatus();
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { message?: string } } };
+      toast.error(error.response?.data?.message || "Erro ao melhorar prompt.");
+    } finally { setGenerating(false); }
+  }
+
+  async function handleAcceptPreview() {
+    if (previewTarget === "new") {
+      setForm({ name: "Gerado por Jarbs", system_prompt: previewPrompt, greeting_message: "", fallback_message: "", offline_message: "" });
+      setEditingId(null);
+      setDialogOpen(true);
+    } else {
+      try {
+        await api.put(`/prompts/${previewTarget}`, { system_prompt: previewPrompt });
+        toast.success("Prompt atualizado com sucesso!");
+        loadPrompts();
+      } catch { toast.error("Erro ao atualizar prompt."); }
+    }
+    setPreviewOpen(false);
+  }
 
   async function loadPrompts() {
     try {
@@ -105,13 +168,31 @@ export default function PromptsPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-white">Prompts / Persona</h1>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button onClick={openNew} className="bg-indigo-600 hover:bg-indigo-700">
-              <Plus className="mr-2 h-4 w-4" />Novo Prompt
+        <div>
+          <h1 className="text-2xl font-bold text-white">Prompts / Persona</h1>
+          {jarbsStatus && jarbsStatus.available && (
+            <p className="text-xs text-slate-500 mt-1">
+              Jarbs: {jarbsStatus.remaining === -1 ? "Ilimitado" : `${jarbsStatus.remaining} gerações restantes este mês`}
+            </p>
+          )}
+        </div>
+        <div className="flex gap-2">
+          {jarbsStatus?.available && (
+            <Button
+              onClick={handleGenerate}
+              disabled={generating || (jarbsStatus.remaining === 0)}
+              className="bg-purple-600 hover:bg-purple-700"
+            >
+              {generating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+              Gerar Prompt (IA)
             </Button>
-          </DialogTrigger>
+          )}
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <DialogTrigger asChild>
+              <Button onClick={openNew} className="bg-indigo-600 hover:bg-indigo-700">
+                <Plus className="mr-2 h-4 w-4" />Novo Prompt
+              </Button>
+            </DialogTrigger>
           <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto border-slate-800 bg-slate-900">
             <DialogHeader>
               <DialogTitle className="text-white">{editingId ? "Editar" : "Novo"} Prompt</DialogTitle>
@@ -172,6 +253,18 @@ export default function PromptsPage() {
                         <Star className="mr-1 h-3 w-3" />Ativar
                       </Button>
                     )}
+                    {jarbsStatus?.available && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleImprove(p.id, p.system_prompt)}
+                        disabled={generating || (jarbsStatus.remaining === 0)}
+                        className="text-purple-400 hover:text-purple-300"
+                      >
+                        {generating ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Wand2 className="mr-1 h-3 w-3" />}
+                        Melhorar
+                      </Button>
+                    )}
                     <Button variant="ghost" size="icon" onClick={() => openEdit(p)} className="text-slate-400 hover:text-white">
                       <Pencil className="h-4 w-4" />
                     </Button>
@@ -186,6 +279,31 @@ export default function PromptsPage() {
           ))}
         </div>
       )}
+
+      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+        <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto border-slate-800 bg-slate-900">
+          <DialogHeader>
+            <DialogTitle className="text-white flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-purple-400" />
+              {previewTarget === "new" ? "Prompt Gerado pelo Jarbs" : "Prompt Melhorado pelo Jarbs"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="rounded-lg border border-slate-700 bg-slate-800 p-4">
+              <pre className="whitespace-pre-wrap text-sm text-slate-200 font-mono">{previewPrompt}</pre>
+            </div>
+            <p className="text-xs text-slate-500">{previewPrompt.length} caracteres</p>
+            <div className="flex gap-3">
+              <Button onClick={handleAcceptPreview} className="flex-1 bg-green-600 hover:bg-green-700">
+                Aceitar e Aplicar
+              </Button>
+              <Button onClick={() => setPreviewOpen(false)} variant="outline" className="flex-1 border-slate-700 text-slate-300">
+                Rejeitar
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

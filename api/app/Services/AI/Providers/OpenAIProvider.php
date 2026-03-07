@@ -14,6 +14,8 @@ class OpenAIProvider implements AIProviderInterface
 {
     public function __construct(
         private readonly string $apiKey,
+        private readonly string $baseUrl = 'https://api.openai.com/v1',
+        private readonly string $providerName = 'openai',
     ) {}
 
     public function chat(
@@ -41,7 +43,7 @@ class OpenAIProvider implements AIProviderInterface
 
         $response = Http::withHeaders([
             'Authorization' => "Bearer {$this->apiKey}",
-        ])->timeout(30)->post('https://api.openai.com/v1/chat/completions', $payload);
+        ])->timeout(30)->post("{$this->baseUrl}/chat/completions", $payload);
 
         $latencyMs = (int) ((hrtime(true) - $start) / 1_000_000);
 
@@ -54,7 +56,7 @@ class OpenAIProvider implements AIProviderInterface
             return new AIResponse(
                 content: 'Desculpe, não consegui processar sua mensagem. Tente novamente.',
                 latencyMs: $latencyMs,
-                provider: 'openai',
+                provider: $this->providerName,
                 model: $payload['model'],
             );
         }
@@ -80,7 +82,7 @@ class OpenAIProvider implements AIProviderInterface
             tokensInput: $usage['prompt_tokens'] ?? 0,
             tokensOutput: $usage['completion_tokens'] ?? 0,
             latencyMs: $latencyMs,
-            provider: 'openai',
+            provider: $this->providerName,
             model: $payload['model'],
         );
     }
@@ -118,7 +120,7 @@ class OpenAIProvider implements AIProviderInterface
 
         $response = Http::withHeaders([
             'Authorization' => "Bearer {$this->apiKey}",
-        ])->timeout(30)->post('https://api.openai.com/v1/chat/completions', [
+        ])->timeout(30)->post("{$this->baseUrl}/chat/completions", [
             'model' => $options['model'] ?? 'gpt-4o-mini',
             'messages' => $messages,
             'temperature' => $options['temperature'] ?? 0.7,
@@ -131,7 +133,7 @@ class OpenAIProvider implements AIProviderInterface
             return new AIResponse(
                 content: $result->success ? $result->message : 'Ocorreu um erro ao processar a ação.',
                 latencyMs: $latencyMs + $previous->latencyMs,
-                provider: 'openai',
+                provider: $this->providerName,
                 model: $options['model'] ?? 'gpt-4o-mini',
             );
         }
@@ -145,7 +147,7 @@ class OpenAIProvider implements AIProviderInterface
             tokensInput: ($previous->tokensInput) + ($usage['prompt_tokens'] ?? 0),
             tokensOutput: ($previous->tokensOutput) + ($usage['completion_tokens'] ?? 0),
             latencyMs: $latencyMs + $previous->latencyMs,
-            provider: 'openai',
+            provider: $this->providerName,
             model: $options['model'] ?? 'gpt-4o-mini',
         );
     }

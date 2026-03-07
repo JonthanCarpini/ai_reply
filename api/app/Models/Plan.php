@@ -14,6 +14,7 @@ class Plan extends Model
         'messages_limit',
         'whatsapp_limit',
         'actions_limit',
+        'ai_generation_limit',
         'analytics_enabled',
         'priority_support',
         'features',
@@ -24,6 +25,7 @@ class Plan extends Model
     {
         return [
             'price' => 'decimal:2',
+            'ai_generation_limit' => 'integer',
             'analytics_enabled' => 'boolean',
             'priority_support' => 'boolean',
             'features' => 'array',
