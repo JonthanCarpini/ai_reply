@@ -12,6 +12,7 @@ use App\Services\ConversationManager;
 use App\Services\RuleEngine;
 use App\Services\RuleResult;
 use App\Services\XuiPanelService;
+use Illuminate\Support\Facades\Log;
 
 class AIEngine
 {
@@ -91,6 +92,14 @@ class AIEngine
             $toolName = $aiResponse->toolCall->name;
             $actionType = ToolRegistry::mapToolNameToActionType($toolName);
 
+            Log::channel('notifications')->info('TOOL_CALL', [
+                'user_id' => $user->id,
+                'tool' => $toolName,
+                'action_type' => $actionType,
+                'arguments' => $aiResponse->toolCall->arguments,
+                'panel_url' => $panelConfig->panel_url,
+            ]);
+
             $action = $actions->firstWhere('action_type', $actionType);
 
             if ($action && $action->canExecute()) {
@@ -99,6 +108,13 @@ class AIEngine
                 $actionSuccess = $actionResult->success;
                 $actionResultData = $actionResult->data;
 
+                Log::channel('notifications')->info('TOOL_RESULT', [
+                    'user_id' => $user->id,
+                    'tool' => $toolName,
+                    'success' => $actionResult->success,
+                    'message' => $actionResult->message ?: $actionResult->errorMessage,
+                ]);
+
                 $action->increment('daily_count');
 
                 $this->logAction($user, $conversation, $actionType, $actionParams, $actionResult);
@@ -106,7 +122,19 @@ class AIEngine
                 $aiResponse = $provider->handleToolResult(
                     $aiResponse, $actionResult, $systemPrompt, $history, $message, $options
                 );
+            } else {
+                Log::channel('notifications')->warning('TOOL_SKIP', [
+                    'user_id' => $user->id,
+                    'tool' => $toolName,
+                    'action_found' => $action !== null,
+                    'can_execute' => $action?->canExecute(),
+                ]);
             }
+        } elseif ($aiResponse->hasToolCall() && !$panelConfig) {
+            Log::channel('notifications')->warning('TOOL_NO_PANEL', [
+                'user_id' => $user->id,
+                'tool' => $aiResponse->toolCall->name,
+            ]);
         }
 
         $this->conversationManager->saveAssistantMessage(

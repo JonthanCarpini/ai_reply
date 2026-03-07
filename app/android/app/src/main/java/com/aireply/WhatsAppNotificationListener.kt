@@ -33,7 +33,9 @@ class WhatsAppNotificationListener : NotificationListenerService() {
         val text: String,
         val time: Long,
         val fromMe: Boolean,
-        val sbn: StatusBarNotification
+        val sbn: StatusBarNotification,
+        val messageType: String = "text",
+        val mediaBase64: String? = null
     )
 
     private val messageBuffer = ConcurrentHashMap<String, CopyOnWriteArrayList<BufferedMessage>>()
@@ -103,6 +105,28 @@ class WhatsAppNotificationListener : NotificationListenerService() {
 
         if (messageText.isNullOrBlank() || messageText.length < 2) return
 
+        // ── Detectar tipo de mensagem ──
+        val messageType = MediaExtractor.detectMessageType(messageText)
+        var mediaBase64: String? = null
+
+        if (messageType == "image") {
+            // Tentar extrair imagem da notificação (BigPictureStyle)
+            mediaBase64 = MediaExtractor.extractImageFromNotification(sbn)
+            if (mediaBase64 == null) {
+                // Fallback: buscar imagem recente no MediaStore
+                mediaBase64 = MediaExtractor.findRecentWhatsAppImage(this)
+            }
+            if (mediaBase64 != null) {
+                Log.i(TAG, "IMAGE extracted for $title (${mediaBase64.length} chars base64)")
+            }
+        } else if (messageType == "audio") {
+            // Buscar áudio recente no MediaStore
+            mediaBase64 = MediaExtractor.findRecentWhatsAppAudio(this)
+            if (mediaBase64 != null) {
+                Log.i(TAG, "AUDIO extracted for $title (${mediaBase64.length} chars base64)")
+            }
+        }
+
         // ── Eco cross-contact: comparar com respostas recentes do bot ──
         // WhatsApp muda title para "Você" quando bot responde via RemoteInput
         val now = System.currentTimeMillis()
@@ -139,7 +163,7 @@ class WhatsAppNotificationListener : NotificationListenerService() {
         }
 
         // ── Adicionar ao buffer ──
-        val msg = BufferedMessage(messageText, messageTime, fromMe, sbn)
+        val msg = BufferedMessage(messageText, messageTime, fromMe, sbn, messageType, mediaBase64)
         messageBuffer.getOrPut(title) { CopyOnWriteArrayList() }.add(msg)
 
         // ── Resetar timer ──
@@ -177,9 +201,14 @@ class WhatsAppNotificationListener : NotificationListenerService() {
             val fullMessage = messages.joinToString("\n") { it.text }
             val lastFromMe = messages.last().fromMe
 
-            Log.i(TAG, "=== SEND: $contact msgs=${messages.size} from_me=$lastFromMe text='${fullMessage.take(80)}'")
+            // Pegar tipo e mídia da mensagem mais relevante (última com mídia, ou última)
+            val mediaMsg = messages.lastOrNull { it.mediaBase64 != null } ?: messages.last()
+            val messageType = mediaMsg.messageType
+            val mediaBase64 = mediaMsg.mediaBase64
 
-            callApiAndReply(contact, fullMessage, lastFromMe, replyAction, lastSbn)
+            Log.i(TAG, "=== SEND: $contact msgs=${messages.size} type=$messageType from_me=$lastFromMe text='${fullMessage.take(80)}'")
+
+            callApiAndReply(contact, fullMessage, lastFromMe, replyAction, lastSbn, messageType, mediaBase64)
         } catch (e: Exception) {
             Log.e(TAG, "Error in flushBuffer", e)
             NotificationBridge.sendError(this@WhatsAppNotificationListener, e.message ?: "Error")
@@ -195,7 +224,9 @@ class WhatsAppNotificationListener : NotificationListenerService() {
         message: String,
         fromMe: Boolean,
         replyAction: Notification.Action,
-        sbn: StatusBarNotification
+        sbn: StatusBarNotification,
+        messageType: String = "text",
+        mediaBase64: String? = null
     ) {
         val token = getAuthToken() ?: return
         val apiUrl = getApiUrl()
@@ -216,6 +247,10 @@ class WhatsAppNotificationListener : NotificationListenerService() {
             put("contact_phone", phone)
             put("message", message)
             put("from_me", fromMe)
+            put("message_type", messageType)
+            if (mediaBase64 != null) {
+                put("media_data", mediaBase64)
+            }
         }
 
         OutputStreamWriter(conn.outputStream).use { it.write(body.toString()) }
@@ -298,7 +333,7 @@ class WhatsAppNotificationListener : NotificationListenerService() {
                     put("from_me", fromMe)
                     put("is_processing", isProcessing[contact] == true)
                     put("buffer_size", messageBuffer[contact]?.size ?: 0)
-                    put("app_version", "2.0")
+                    put("app_version", "2.1")
                     put("ts", System.currentTimeMillis())
                 }
 

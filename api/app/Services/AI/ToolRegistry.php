@@ -9,11 +9,10 @@ class ToolRegistry
     private static array $definitions = [
         'create_test' => [
             'name' => 'criar_teste',
-            'description' => 'Cria um teste/demonstração IPTV para o cliente. Use quando o cliente pedir para testar, experimentar, ou demonstrar o serviço.',
+            'description' => 'Cria uma conta de teste/demonstração IPTV para o cliente. CHAME ESTA FERRAMENTA IMEDIATAMENTE quando o cliente pedir para testar, experimentar, criar teste, ou demonstrar o serviço. Não pergunte informações adicionais - apenas crie o teste. O username e password são gerados automaticamente se não informados.',
             'parameters' => [
-                'username' => ['type' => 'string', 'description' => 'Nome de usuário para o teste (gerar automaticamente se não informado)'],
-                'password' => ['type' => 'string', 'description' => 'Senha (gerar automaticamente se não informado)'],
-                'package_id' => ['type' => 'integer', 'description' => 'ID do pacote de teste'],
+                'username' => ['type' => 'string', 'description' => 'Nome de usuário para o teste (opcional, gerado automaticamente)'],
+                'password' => ['type' => 'string', 'description' => 'Senha (opcional, gerada automaticamente)'],
             ],
             'required' => [],
         ],
@@ -28,15 +27,16 @@ class ToolRegistry
         ],
         'check_status' => [
             'name' => 'consultar_status',
-            'description' => 'Consulta o status, vencimento e dados de um cliente. Use quando perguntarem sobre conta, vencimento, status.',
+            'description' => 'Consulta o status, vencimento e dados de um cliente existente. Use quando perguntarem sobre conta, vencimento, status, ou se o serviço está ativo.',
             'parameters' => [
-                'search_term' => ['type' => 'string', 'description' => 'Username ou nome do cliente para buscar'],
+                'search_term' => ['type' => 'string', 'description' => 'Username do cliente para buscar'],
+                'phone' => ['type' => 'string', 'description' => 'Telefone do cliente para buscar (últimos 4 dígitos ou completo)'],
             ],
-            'required' => ['search_term'],
+            'required' => [],
         ],
         'list_packages' => [
             'name' => 'listar_pacotes',
-            'description' => 'Lista pacotes/planos disponíveis com preços. Use quando perguntarem preços, planos, pacotes.',
+            'description' => 'Lista pacotes/planos disponíveis com preços e detalhes. Use quando perguntarem preços, planos, pacotes, valores ou o que está disponível.',
             'parameters' => [],
             'required' => [],
         ],
@@ -48,7 +48,7 @@ class ToolRegistry
         ],
         'transfer_human' => [
             'name' => 'transferir_humano',
-            'description' => 'Transfere o atendimento para o revendedor humano. Use quando não souber responder ou o cliente insistir em falar com humano.',
+            'description' => 'Transfere o atendimento para o revendedor humano. Use quando não souber responder, o cliente insistir em falar com humano, ou houver um problema que exige intervenção manual.',
             'parameters' => [
                 'reason' => ['type' => 'string', 'description' => 'Motivo da transferência'],
             ],

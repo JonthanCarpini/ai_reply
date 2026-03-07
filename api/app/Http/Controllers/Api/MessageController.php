@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Services\AI\AIEngine;
+use App\Services\AI\MediaProcessorService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -27,18 +28,24 @@ class MessageController extends Controller
             'message' => ['required', 'string', 'max:5000'],
             'whatsapp_number' => ['nullable', 'string', 'max:20'],
             'from_me' => ['nullable', 'boolean'],
+            'message_type' => ['nullable', 'string', 'in:text,image,audio,video,sticker,document,contact,location'],
+            'media_data' => ['nullable', 'string'],
         ]);
 
         $user = $request->user();
         $contactPhone = $validated['contact_phone'];
         $message = $validated['message'];
         $fromMe = $validated['from_me'] ?? false;
+        $messageType = $validated['message_type'] ?? 'text';
+        $mediaData = $validated['media_data'] ?? null;
 
         Log::channel('notifications')->info('PROCESS_REQUEST', [
             'user_id' => $user->id,
             'contact' => $contactPhone,
             'message' => Str::limit($message, 100),
             'from_me' => $fromMe,
+            'message_type' => $messageType,
+            'has_media' => $mediaData !== null,
         ]);
 
         // ── CAMADA 1: flag from_me enviada pelo app ──
@@ -65,10 +72,16 @@ class MessageController extends Controller
             ], 402);
         }
 
+        // ── CAMADA 3: processar mídia (imagem/áudio) antes de enviar ao AIEngine ──
+        $processedMessage = $message;
+        if ($mediaData && $messageType !== 'text') {
+            $processedMessage = $this->processMedia($user, $messageType, $mediaData, $message);
+        }
+
         $result = $this->aiEngine->process(
             user: $user,
             contactPhone: $contactPhone,
-            message: $message,
+            message: $processedMessage,
             contactName: $validated['contact_name'] ?? null,
             whatsappNumber: $validated['whatsapp_number'] ?? null,
         );
@@ -225,6 +238,56 @@ class MessageController extends Controller
         $existing = array_slice($existing, -10);
 
         Cache::put($globalKey, $existing, self::ECHO_CACHE_TTL);
+    }
+
+    /**
+     * Processa mídia (imagem/áudio) e retorna o texto equivalente para o AIEngine.
+     */
+    private function processMedia($user, string $messageType, string $mediaData, string $originalMessage): string
+    {
+        $aiConfig = $user->aiConfig;
+        if (!$aiConfig) {
+            return $originalMessage;
+        }
+
+        $apiKey = $aiConfig->getDecryptedApiKey();
+        $processor = new MediaProcessorService($apiKey);
+
+        switch ($messageType) {
+            case 'image':
+                $description = $processor->analyzeImage($mediaData);
+                if ($description) {
+                    Log::channel('notifications')->info('MEDIA_IMAGE_ANALYZED', [
+                        'user_id' => $user->id,
+                        'description_length' => strlen($description),
+                    ]);
+                    return "[O cliente enviou uma IMAGEM. Descrição da imagem: {$description}]";
+                }
+                return "[O cliente enviou uma imagem que não pude analisar. Texto da notificação: {$originalMessage}]";
+
+            case 'audio':
+                $transcription = $processor->transcribeAudio($mediaData);
+                if ($transcription) {
+                    Log::channel('notifications')->info('MEDIA_AUDIO_TRANSCRIBED', [
+                        'user_id' => $user->id,
+                        'transcription_length' => strlen($transcription),
+                    ]);
+                    return "[O cliente enviou um ÁUDIO. Transcrição: {$transcription}]";
+                }
+                return "[O cliente enviou um áudio que não pude transcrever. Texto da notificação: {$originalMessage}]";
+
+            case 'video':
+                return "[O cliente enviou um VÍDEO. Texto da notificação: {$originalMessage}]";
+
+            case 'sticker':
+                return "[O cliente enviou uma FIGURINHA. Texto da notificação: {$originalMessage}]";
+
+            case 'document':
+                return "[O cliente enviou um DOCUMENTO. Texto da notificação: {$originalMessage}]";
+
+            default:
+                return $originalMessage;
+        }
     }
 
     private function normalize(string $text): string
