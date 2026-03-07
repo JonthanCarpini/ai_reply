@@ -83,6 +83,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // Mensagens (Core — chamado pelo App)
     Route::post('/messages/process', [MessageController::class, 'process']);
     Route::post('/messages/notification-log', [MessageController::class, 'notificationLog']);
+    Route::get('/messages/debug-logs', [MessageController::class, 'debugLogs']);
 
     // Dashboard
     Route::get('/dashboard/stats', [DashboardController::class, 'stats']);

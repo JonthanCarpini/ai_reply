@@ -123,26 +123,71 @@ class MessageController extends Controller
         return response()->json(['ok' => true]);
     }
 
+    public function debugLogs(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        $limit = min((int) $request->query('limit', 100), 500);
+
+        $logFile = storage_path('logs/notifications-' . now()->format('Y-m-d') . '.log');
+
+        if (!file_exists($logFile)) {
+            return response()->json(['logs' => [], 'file' => $logFile, 'exists' => false]);
+        }
+
+        $lines = file($logFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        $lines = array_slice($lines, -$limit);
+
+        $parsed = [];
+        foreach ($lines as $line) {
+            // Formato: [2026-03-07 19:31:10] production.INFO: TYPE {json}
+            if (preg_match('/^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\] \w+\.(\w+): (\w+) (.*)$/', $line, $m)) {
+                $data = json_decode($m[4], true);
+
+                // Filtrar por user_id se não for admin
+                if ($data && isset($data['user_id']) && $data['user_id'] !== $user->id) {
+                    if (!$user->is_admin) continue;
+                }
+
+                $parsed[] = [
+                    'timestamp' => $m[1],
+                    'level' => $m[2],
+                    'type' => $m[3],
+                    'data' => $data ?? $m[4],
+                ];
+            }
+        }
+
+        return response()->json([
+            'logs' => $parsed,
+            'total' => count($parsed),
+            'file' => basename($logFile),
+        ]);
+    }
+
     private function isEchoOfBotReply(int $userId, string $contactPhone, string $message): bool
     {
-        $cacheKey = "bot_replies:{$userId}:{$contactPhone}";
-        $cachedReplies = Cache::get($cacheKey, []);
+        // Cache GLOBAL por user_id — pega eco mesmo quando WhatsApp muda title
+        // (ex: "Meu numero:" → "Você")
+        $globalKey = "bot_replies_global:{$userId}";
+        $allReplies = Cache::get($globalKey, []);
 
-        if (empty($cachedReplies)) {
+        if (empty($allReplies)) {
             return false;
         }
 
         $msgNorm = $this->normalize($message);
 
-        foreach ($cachedReplies as $reply) {
-            $replyNorm = $this->normalize($reply);
+        foreach ($allReplies as $entry) {
+            $replyNorm = $this->normalize($entry['text']);
 
-            // Check exato
             if ($msgNorm === $replyNorm) {
+                Log::channel('notifications')->info('ECHO_MATCH_EXACT', [
+                    'contact' => $contactPhone,
+                    'original_contact' => $entry['contact'],
+                ]);
                 return true;
             }
 
-            // Check: mensagem contida na resposta ou vice-versa
             if (Str::length($msgNorm) > 10 && Str::contains($replyNorm, $msgNorm)) {
                 return true;
             }
@@ -150,14 +195,13 @@ class MessageController extends Controller
                 return true;
             }
 
-            // Check: primeiros 40 chars iguais
-            if (Str::length($msgNorm) >= 30 && Str::length($replyNorm) >= 30) {
+            // Primeiros 40 chars iguais
+            if (Str::length($msgNorm) >= 20 && Str::length($replyNorm) >= 20) {
                 if (Str::substr($msgNorm, 0, 40) === Str::substr($replyNorm, 0, 40)) {
                     return true;
                 }
             }
 
-            // Check: similaridade alta (similar_text)
             similar_text($msgNorm, $replyNorm, $percent);
             if ($percent >= self::ECHO_SIMILARITY_THRESHOLD * 100) {
                 return true;
@@ -169,14 +213,18 @@ class MessageController extends Controller
 
     private function cacheReply(int $userId, string $contactPhone, string $reply): void
     {
-        $cacheKey = "bot_replies:{$userId}:{$contactPhone}";
-        $existing = Cache::get($cacheKey, []);
-        $existing[] = $reply;
+        $globalKey = "bot_replies_global:{$userId}";
+        $existing = Cache::get($globalKey, []);
+        $existing[] = [
+            'text' => $reply,
+            'contact' => $contactPhone,
+            'time' => now()->timestamp,
+        ];
 
-        // Manter apenas as últimas 5 respostas
-        $existing = array_slice($existing, -5);
+        // Manter apenas as últimas 10 respostas
+        $existing = array_slice($existing, -10);
 
-        Cache::put($cacheKey, $existing, self::ECHO_CACHE_TTL);
+        Cache::put($globalKey, $existing, self::ECHO_CACHE_TTL);
     }
 
     private function normalize(string $text): string

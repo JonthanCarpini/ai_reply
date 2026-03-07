@@ -40,6 +40,10 @@ class WhatsAppNotificationListener : NotificationListenerService() {
     private val bufferTimers = ConcurrentHashMap<String, Job>()
     private val isProcessing = ConcurrentHashMap<String, Boolean>()
 
+    // Cache GLOBAL de respostas enviadas (texto → timestamp)
+    // Usado para detectar eco cross-contact (WhatsApp muda title para "Você")
+    private val sentRepliesGlobal = CopyOnWriteArrayList<Pair<String, Long>>()
+
     private fun getAllowedPackages(): Set<String> {
         val prefs = getSharedPreferences("ai_reply_prefs", MODE_PRIVATE)
         return prefs.getStringSet("whatsapp_packages", DEFAULT_PACKAGES) ?: DEFAULT_PACKAGES
@@ -99,8 +103,34 @@ class WhatsAppNotificationListener : NotificationListenerService() {
 
         if (messageText.isNullOrBlank() || messageText.length < 2) return
 
+        // ── Eco cross-contact: comparar com respostas recentes do bot ──
+        // WhatsApp muda title para "Você" quando bot responde via RemoteInput
+        val now = System.currentTimeMillis()
+        val msgLower = messageText.trim().lowercase()
+        val isEcho = sentRepliesGlobal.any { (replyText, replyTime) ->
+            if (now - replyTime > 30_000) return@any false
+            val replyLower = replyText.trim().lowercase()
+            // Match exato, contenção, ou primeiros 40 chars
+            msgLower == replyLower ||
+                (msgLower.length > 10 && replyLower.contains(msgLower)) ||
+                (replyLower.length > 10 && msgLower.contains(replyLower)) ||
+                (msgLower.length >= 30 && replyLower.length >= 30 &&
+                    msgLower.take(40) == replyLower.take(40))
+        }
+
+        if (isEcho) {
+            fromMe = true
+            Log.d(TAG, "ECO detected via sentRepliesGlobal for $title")
+        }
+
         // ── Log remoto (fire-and-forget) ──
         sendRemoteLog(title, messageText, messageTime, fromMe, sbn)
+
+        // ── Se from_me (eco detectado), ignorar ──
+        if (fromMe) {
+            Log.d(TAG, "SKIP: from_me/echo for $title")
+            return
+        }
 
         // ── Se em processamento, ignorar (evita race condition) ──
         if (isProcessing[title] == true) {
@@ -221,6 +251,14 @@ class WhatsAppNotificationListener : NotificationListenerService() {
             Log.d(TAG, "Blocked by rules")
             return
         }
+
+        // ── Guardar resposta no cache GLOBAL antes de enviar ──
+        sentRepliesGlobal.add(Pair(reply, System.currentTimeMillis()))
+        // Limpar entradas > 60s
+        val cutoff = System.currentTimeMillis() - 60_000
+        sentRepliesGlobal.removeAll { it.second < cutoff }
+
+        Log.d(TAG, "CACHED reply (${sentRepliesGlobal.size} total): '${reply.take(40)}'")
 
         // ── Enviar resposta via WhatsApp ──
         val intent = Intent()
