@@ -22,7 +22,8 @@ class WhatsAppNotificationListener : NotificationListenerService() {
         private const val TAG = "AIReplyListener"
         private val DEFAULT_PACKAGES = setOf("com.whatsapp", "com.whatsapp.w4b")
         private const val BUFFER_DELAY_MS = 3_000L
-        private const val POST_REPLY_BLOCK_MS = 5_000L
+        private const val POST_REPLY_BLOCK_MS = 12_000L
+        private const val REPLY_BLOCK_WINDOW_MS = 15_000L
         var isRunning = false
             private set
     }
@@ -46,6 +47,10 @@ class WhatsAppNotificationListener : NotificationListenerService() {
 
     // ── Cache de respostas enviadas (fallback from_me) ──
     private val sentRepliesCache = ConcurrentHashMap<String, Long>()
+
+    // ── Reply block: bloqueia contato por REPLY_BLOCK_WINDOW_MS após enviar resposta ──
+    private val replyBlockUntil = ConcurrentHashMap<String, Long>()
+    private val lastReplyText = ConcurrentHashMap<String, String>()
 
     private fun getAllowedPackages(): Set<String> {
         val prefs = getSharedPreferences("ai_reply_prefs", MODE_PRIVATE)
@@ -129,13 +134,26 @@ class WhatsAppNotificationListener : NotificationListenerService() {
 
         if (messageText.isNullOrBlank() || messageText.length < 2) return
 
-        // Fallback from_me: comparar com cache de respostas enviadas
+        // Fallback from_me #1: comparar com cache de respostas enviadas (primeiros 30 chars)
         if (!isFromMe) {
             val cacheKey = "${title}:${messageText.trim().take(80).lowercase()}"
             val cachedTime = sentRepliesCache[cacheKey]
             if (cachedTime != null && (System.currentTimeMillis() - cachedTime) < 30_000) {
                 isFromMe = true
                 Log.d(TAG, "FROM_ME detected via sentRepliesCache for $title")
+            }
+        }
+
+        // Fallback from_me #2: comparar com lastReplyText (contains nos primeiros 30 chars)
+        if (!isFromMe) {
+            val lastReply = lastReplyText[title]
+            if (lastReply != null) {
+                val replyPrefix = lastReply.trim().take(30).lowercase()
+                val msgNorm = messageText.trim().lowercase()
+                if (replyPrefix.isNotEmpty() && (msgNorm.contains(replyPrefix) || replyPrefix.contains(msgNorm.take(30)))) {
+                    isFromMe = true
+                    Log.d(TAG, "FROM_ME detected via lastReplyText contains for $title")
+                }
             }
         }
 
@@ -149,9 +167,36 @@ class WhatsAppNotificationListener : NotificationListenerService() {
             sbn.key, sbn.packageName, flags, extraText, allMessagesJson
         )
 
-        // ── Se estamos processando este contato, ignorar ──
+        // ── CAMADA 1: Se estamos processando este contato, ignorar ──
         if (isProcessing[title] == true) {
-            Log.d(TAG, "SKIP: currently processing $title")
+            Log.d(TAG, "SKIP: isProcessing active for $title")
+            return
+        }
+
+        // ── CAMADA 2: Reply block temporal — bloqueia notificações pós-resposta ──
+        val blockUntil = replyBlockUntil[title] ?: 0L
+        if (System.currentTimeMillis() < blockUntil) {
+            if (isFromMe) {
+                Log.d(TAG, "SKIP: replyBlock + from_me for $title")
+                return
+            }
+            // Dentro do block mas from_me=false: verificar conteúdo extra
+            val lastReply = lastReplyText[title]
+            if (lastReply != null) {
+                val replyNorm = lastReply.trim().lowercase()
+                val msgNorm = messageText.trim().lowercase()
+                // Se a mensagem é igual ou contida na resposta → é eco do bot
+                if (replyNorm.contains(msgNorm) || msgNorm.contains(replyNorm.take(40))) {
+                    Log.d(TAG, "SKIP: replyBlock + content match for $title")
+                    return
+                }
+            }
+            Log.d(TAG, "ALLOW: replyBlock active but new message from contact for $title")
+        }
+
+        // ── Se from_me após todas as verificações, ignorar ──
+        if (isFromMe) {
+            Log.d(TAG, "SKIP: from_me detected for $title")
             return
         }
 
@@ -288,6 +333,10 @@ class WhatsAppNotificationListener : NotificationListenerService() {
         // Gravar resposta no cache ANTES de enviar (para detectar from_me depois)
         val cacheKey = "${sender}:${reply.trim().take(80).lowercase()}"
         sentRepliesCache[cacheKey] = System.currentTimeMillis()
+        lastReplyText[sender] = reply
+        replyBlockUntil[sender] = System.currentTimeMillis() + REPLY_BLOCK_WINDOW_MS
+
+        Log.d(TAG, "REPLY_BLOCK set for $sender until +${REPLY_BLOCK_WINDOW_MS}ms")
 
         // Enviar resposta via WhatsApp
         val intent = Intent()
@@ -298,7 +347,6 @@ class WhatsAppNotificationListener : NotificationListenerService() {
         RemoteInput.addResultsToIntent(replyAction.remoteInputs, intent, bundle)
         replyAction.actionIntent.send(this, 0, intent)
 
-        cancelNotification(sbn.key)
         Log.i(TAG, "REPLIED: $sender → '${reply.take(60)}'")
 
         // Cleanup periódico
@@ -344,7 +392,9 @@ class WhatsAppNotificationListener : NotificationListenerService() {
                     put("all_messages", allMessages)
                     put("is_processing", isProcessing[contact] == true)
                     put("buffer_size", messageBuffer[contact]?.size ?: 0)
-                    put("app_version", "1.5")
+                    put("app_version", "1.6")
+                    put("reply_block_active", (replyBlockUntil[contact] ?: 0L) > System.currentTimeMillis())
+                    put("last_reply_text_exists", lastReplyText[contact] != null)
                     put("ts", System.currentTimeMillis())
                 }
 
@@ -380,6 +430,8 @@ class WhatsAppNotificationListener : NotificationListenerService() {
     private fun cleanupOldEntries() {
         val cutoff = System.currentTimeMillis() - 300_000L
         sentRepliesCache.entries.removeAll { it.value < cutoff }
+        replyBlockUntil.entries.removeAll { it.value < System.currentTimeMillis() }
+        // lastReplyText mantido por mais tempo para comparações
     }
 
     override fun onDestroy() {
