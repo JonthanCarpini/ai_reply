@@ -37,9 +37,19 @@ interface AdminAiConfig {
 }
 
 const PROVIDERS = [
-  { value: "openai", label: "OpenAI", models: ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"] },
-  { value: "anthropic", label: "Anthropic", models: ["claude-3-5-sonnet-20241022", "claude-3-haiku-20240307"] },
-  { value: "google", label: "Google", models: ["gemini-1.5-pro", "gemini-1.5-flash"] },
+  { value: "openai", label: "OpenAI", models: [
+    "gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano",
+    "gpt-4o", "gpt-4o-mini",
+    "o3", "o3-mini", "o4-mini",
+    "gpt-4-turbo", "gpt-3.5-turbo",
+  ]},
+  { value: "anthropic", label: "Anthropic", models: [
+    "claude-sonnet-4-20250514",
+    "claude-3-7-sonnet-20250219", "claude-3-7-sonnet-latest",
+    "claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022",
+    "claude-3-haiku-20240307",
+  ]},
+  { value: "google", label: "Google", models: ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash"] },
   { value: "groq", label: "Groq", models: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"] },
   { value: "mistral", label: "Mistral", models: ["mistral-large-latest", "mistral-medium-latest", "mistral-small-latest"] },
 ];
