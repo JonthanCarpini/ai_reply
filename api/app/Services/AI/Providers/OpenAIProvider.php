@@ -8,6 +8,7 @@ use App\Services\AI\DTOs\AIResponse;
 use App\Services\AI\DTOs\ToolCall;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class OpenAIProvider implements AIProviderInterface
 {
@@ -45,6 +46,11 @@ class OpenAIProvider implements AIProviderInterface
         $latencyMs = (int) ((hrtime(true) - $start) / 1_000_000);
 
         if (!$response->successful()) {
+            Log::error('OpenAI API error', [
+                'status' => $response->status(),
+                'body' => substr($response->body(), 0, 500),
+                'model' => $payload['model'],
+            ]);
             return new AIResponse(
                 content: 'Desculpe, não consegui processar sua mensagem. Tente novamente.',
                 latencyMs: $latencyMs,
@@ -166,7 +172,7 @@ class OpenAIProvider implements AIProviderInterface
                 'description' => $tool['description'],
                 'parameters' => [
                     'type' => 'object',
-                    'properties' => $tool['parameters'] ?? (object) [],
+                    'properties' => !empty($tool['parameters']) ? $tool['parameters'] : (object) [],
                     'required' => $tool['required'] ?? [],
                 ],
             ],
