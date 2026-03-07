@@ -226,6 +226,7 @@ export default function PromptsPage() {
             </form>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       {prompts.length === 0 ? (
