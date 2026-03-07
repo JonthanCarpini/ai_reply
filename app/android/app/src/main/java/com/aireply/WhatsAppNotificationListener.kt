@@ -8,10 +8,12 @@ import android.service.notification.StatusBarNotification
 import android.util.Log
 import android.app.RemoteInput
 import kotlinx.coroutines.*
+import kotlinx.coroutines.sync.Mutex
 import org.json.JSONObject
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.ConcurrentHashMap
 
 class WhatsAppNotificationListener : NotificationListenerService() {
 
@@ -19,6 +21,7 @@ class WhatsAppNotificationListener : NotificationListenerService() {
         private const val TAG = "AIReplyListener"
         private val DEFAULT_PACKAGES = setOf("com.whatsapp", "com.whatsapp.w4b")
         private const val COOLDOWN_MS = 30_000L
+        private const val DEDUP_WINDOW_MS = 5_000L
         var isRunning = false
             private set
     }
@@ -26,10 +29,16 @@ class WhatsAppNotificationListener : NotificationListenerService() {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     // Cooldown: contato → timestamp da última resposta enviada
-    private val lastReplyTime = mutableMapOf<String, Long>()
+    private val lastReplyTime = ConcurrentHashMap<String, Long>()
+
+    // Mutex por contato: evita processar 2 mensagens do mesmo contato em paralelo
+    private val contactMutex = ConcurrentHashMap<String, Mutex>()
+
+    // Dedup: chave(contato+msg) → timestamp — evita processar mesma msg 2x
+    private val recentMessages = ConcurrentHashMap<String, Long>()
 
     // Mensagens enviadas pelo próprio bot (para ignorar notificações de respostas próprias)
-    private val sentReplies = mutableSetOf<String>()
+    private val sentReplies = ConcurrentHashMap.newKeySet<String>()
 
     private fun getAllowedPackages(): Set<String> {
         val prefs = getSharedPreferences("ai_reply_prefs", MODE_PRIVATE)
@@ -60,6 +69,12 @@ class WhatsAppNotificationListener : NotificationListenerService() {
 
         if (text.isBlank() || text.length < 2) return
 
+        // Ignorar notificações de summary/agrupadas (ex: "2 novas mensagens")
+        if (sbn.notification.flags and Notification.FLAG_GROUP_SUMMARY != 0) {
+            Log.d(TAG, "SKIP: group summary notification")
+            return
+        }
+
         // Ignorar mensagens de grupo
         val isGroupMessage = extras.getBoolean(Notification.EXTRA_IS_GROUP_CONVERSATION, false)
         if (isGroupMessage) {
@@ -74,27 +89,49 @@ class WhatsAppNotificationListener : NotificationListenerService() {
             return
         }
 
-        // Cooldown: ignorar mensagens do mesmo contato dentro de COOLDOWN_MS
+        // Dedup: ignorar mensagem idêntica do mesmo contato dentro de DEDUP_WINDOW_MS
         val now = System.currentTimeMillis()
+        val dedupKey = "${title}:${text.trim().lowercase().take(100)}"
+        val lastSeen = recentMessages.put(dedupKey, now)
+        if (lastSeen != null && (now - lastSeen) < DEDUP_WINDOW_MS) {
+            Log.d(TAG, "SKIP: duplicate message from $title within ${DEDUP_WINDOW_MS}ms")
+            return
+        }
+
+        // Cooldown: ignorar mensagens do mesmo contato dentro de COOLDOWN_MS
         val lastReply = lastReplyTime[title] ?: 0L
         if (now - lastReply < COOLDOWN_MS) {
             Log.d(TAG, "SKIP: cooldown active for $title (${(now - lastReply) / 1000}s ago)")
             return
         }
 
+        // Marcar cooldown IMEDIATAMENTE para evitar race condition
+        lastReplyTime[title] = now
+
         // Verificar se tem ação de reply disponível
         val replyAction = sbn.notification.actions?.find { action ->
             action.remoteInputs?.isNotEmpty() == true
-        } ?: return
+        }
+        if (replyAction == null) {
+            // Reverter cooldown se não há como responder
+            lastReplyTime[title] = lastReply
+            return
+        }
 
         Log.i(TAG, "Processing message from $title: ${text.take(50)}")
 
+        // Obter ou criar mutex para este contato
+        val mutex = contactMutex.getOrPut(title) { Mutex() }
+
         scope.launch {
+            mutex.lock()
             try {
                 processMessage(title, text, replyAction, sbn)
             } catch (e: Exception) {
                 Log.e(TAG, "Error processing message", e)
                 NotificationBridge.sendError(this@WhatsAppNotificationListener, e.message ?: "Unknown error")
+            } finally {
+                mutex.unlock()
             }
         }
     }
@@ -169,7 +206,7 @@ class WhatsAppNotificationListener : NotificationListenerService() {
         val replyKey = "${sender}:${reply.take(80)}"
         sentReplies.add(replyKey)
 
-        // Marcar cooldown para este contato
+        // Atualizar cooldown com timestamp real do envio
         lastReplyTime[sender] = System.currentTimeMillis()
 
         // Enviar resposta via WhatsApp
@@ -184,10 +221,11 @@ class WhatsAppNotificationListener : NotificationListenerService() {
         cancelNotification(sbn.key)
         Log.i(TAG, "Replied to $sender: ${reply.take(50)}...")
 
-        // Limpar sentReplies antigos após 10s
+        // Limpar sentReplies e recentMessages antigos após 60s
         scope.launch {
-            delay(10_000)
+            delay(60_000)
             sentReplies.remove(replyKey)
+            cleanupOldEntries()
         }
     }
 
@@ -209,6 +247,14 @@ class WhatsAppNotificationListener : NotificationListenerService() {
         phoneRegex.find(title)?.value?.let { return it }
 
         return ""
+    }
+
+    private fun cleanupOldEntries() {
+        val cutoff = System.currentTimeMillis() - 120_000L
+        recentMessages.entries.removeAll { it.value < cutoff }
+        lastReplyTime.entries.removeAll { it.value < cutoff }
+        // Remover mutexes de contatos inativos
+        contactMutex.entries.removeAll { !it.value.isLocked }
     }
 
     override fun onDestroy() {
