@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Services\AI\AIEngine;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class MessageController extends Controller
 {
@@ -63,5 +64,19 @@ class MessageController extends Controller
             'tokens_used' => $result->tokensUsed,
             'latency_ms' => $result->latencyMs,
         ]);
+    }
+
+    public function notificationLog(Request $request): JsonResponse
+    {
+        $data = $request->all();
+        $user = $request->user();
+
+        Log::channel('notifications')->info('APP_NOTIF', [
+            'user_id' => $user->id,
+            'user_email' => $user->email,
+            ...$data,
+        ]);
+
+        return response()->json(['ok' => true]);
     }
 }
