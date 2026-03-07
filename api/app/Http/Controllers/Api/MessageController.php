@@ -74,7 +74,7 @@ class MessageController extends Controller
 
         // ── CAMADA 3: processar mídia (imagem/áudio) antes de enviar ao AIEngine ──
         $processedMessage = $message;
-        if ($mediaData && $messageType !== 'text') {
+        if ($messageType !== 'text') {
             $processedMessage = $this->processMedia($user, $messageType, $mediaData, $message);
         }
 
@@ -243,47 +243,51 @@ class MessageController extends Controller
     /**
      * Processa mídia (imagem/áudio) e retorna o texto equivalente para o AIEngine.
      */
-    private function processMedia($user, string $messageType, string $mediaData, string $originalMessage): string
+    private function processMedia($user, string $messageType, ?string $mediaData, string $originalMessage): string
     {
         $aiConfig = $user->aiConfig;
-        if (!$aiConfig) {
-            return $originalMessage;
-        }
-
-        $apiKey = $aiConfig->getDecryptedApiKey();
-        $processor = new MediaProcessorService($apiKey);
 
         switch ($messageType) {
             case 'image':
-                $description = $processor->analyzeImage($mediaData);
-                if ($description) {
-                    Log::channel('notifications')->info('MEDIA_IMAGE_ANALYZED', [
-                        'user_id' => $user->id,
-                        'description_length' => strlen($description),
-                    ]);
-                    return "[O cliente enviou uma IMAGEM. Descrição da imagem: {$description}]";
+                if ($mediaData && $aiConfig) {
+                    $processor = new MediaProcessorService($aiConfig->getDecryptedApiKey());
+                    $description = $processor->analyzeImage($mediaData);
+                    if ($description) {
+                        Log::channel('notifications')->info('MEDIA_IMAGE_ANALYZED', [
+                            'user_id' => $user->id,
+                            'description_length' => strlen($description),
+                        ]);
+                        return "[O cliente enviou uma IMAGEM. Descrição da imagem: {$description}]";
+                    }
                 }
-                return "[O cliente enviou uma imagem que não pude analisar. Texto da notificação: {$originalMessage}]";
+                return "[O cliente enviou uma IMAGEM que não pôde ser analisada. Peça para o cliente descrever o conteúdo da imagem por texto.]";
 
             case 'audio':
-                $transcription = $processor->transcribeAudio($mediaData);
-                if ($transcription) {
-                    Log::channel('notifications')->info('MEDIA_AUDIO_TRANSCRIBED', [
-                        'user_id' => $user->id,
-                        'transcription_length' => strlen($transcription),
-                    ]);
-                    return "[O cliente enviou um ÁUDIO. Transcrição: {$transcription}]";
+                if ($mediaData && $aiConfig) {
+                    $processor = new MediaProcessorService($aiConfig->getDecryptedApiKey());
+                    $transcription = $processor->transcribeAudio($mediaData);
+                    if ($transcription) {
+                        Log::channel('notifications')->info('MEDIA_AUDIO_TRANSCRIBED', [
+                            'user_id' => $user->id,
+                            'transcription_length' => strlen($transcription),
+                        ]);
+                        return "[O cliente enviou um ÁUDIO. Transcrição do áudio: {$transcription}]";
+                    }
                 }
-                return "[O cliente enviou um áudio que não pude transcrever. Texto da notificação: {$originalMessage}]";
+                Log::channel('notifications')->info('MEDIA_AUDIO_NO_DATA', [
+                    'user_id' => $user->id,
+                    'has_media' => $mediaData !== null,
+                ]);
+                return "[O cliente enviou uma MENSAGEM DE VOZ que não pôde ser transcrita. Responda normalmente e peça educadamente para o cliente digitar a mensagem, pois você ainda não consegue ouvir áudios.]";
 
             case 'video':
-                return "[O cliente enviou um VÍDEO. Texto da notificação: {$originalMessage}]";
+                return "[O cliente enviou um VÍDEO. Informe que ainda não consegue processar vídeos e peça para descrever por texto.]";
 
             case 'sticker':
-                return "[O cliente enviou uma FIGURINHA. Texto da notificação: {$originalMessage}]";
+                return "[O cliente enviou uma FIGURINHA/STICKER. Responda de forma amigável.]";
 
             case 'document':
-                return "[O cliente enviou um DOCUMENTO. Texto da notificação: {$originalMessage}]";
+                return "[O cliente enviou um DOCUMENTO/ARQUIVO. Informe que ainda não consegue ler documentos e peça para descrever o conteúdo por texto.]";
 
             default:
                 return $originalMessage;

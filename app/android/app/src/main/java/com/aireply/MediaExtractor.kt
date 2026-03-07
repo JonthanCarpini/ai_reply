@@ -84,12 +84,139 @@ object MediaExtractor {
     }
 
     /**
-     * Busca o áudio mais recente do WhatsApp via MediaStore.
-     * Retorna base64 do arquivo de áudio ou null.
+     * Busca o áudio mais recente do WhatsApp.
+     * Tenta 3 abordagens em ordem:
+     * 1. Acesso direto ao filesystem (MANAGE_EXTERNAL_STORAGE)
+     * 2. MediaStore.Files (inclui .opus que não aparece em Audio)
+     * 3. MediaStore.Audio (fallback)
      */
-    fun findRecentWhatsAppAudio(context: Context, maxAgeMs: Long = 30_000): String? {
+    fun findRecentWhatsAppAudio(context: Context, maxAgeMs: Long = 60_000): String? {
+        // Método 1: Acesso direto ao filesystem
+        val directResult = findAudioViaFilesystem(maxAgeMs)
+        if (directResult != null) return directResult
+
+        // Método 2: MediaStore.Files
+        val filesResult = findAudioViaMediaStoreFiles(context, maxAgeMs)
+        if (filesResult != null) return filesResult
+
+        // Método 3: MediaStore.Audio
+        val audioResult = findAudioViaMediaStoreAudio(context, maxAgeMs)
+        if (audioResult != null) return audioResult
+
+        Log.d(TAG, "Nenhum áudio recente do WhatsApp encontrado (3 métodos tentados)")
+        return null
+    }
+
+    /**
+     * Método 1: Acesso direto ao filesystem do WhatsApp.
+     * Funciona com MANAGE_EXTERNAL_STORAGE no Android 11+.
+     */
+    private fun findAudioViaFilesystem(maxAgeMs: Long): String? {
         try {
-            val uri: Uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val basePaths = listOf(
+                // Android 11+ (Scoped Storage)
+                "/storage/emulated/0/Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Voice Notes",
+                "/storage/emulated/0/Android/media/com.whatsapp.w4b/WhatsApp Business/Media/WhatsApp Voice Notes",
+                // Android 10 e anterior
+                "/storage/emulated/0/WhatsApp/Media/WhatsApp Voice Notes",
+                // Áudios recebidos (não voice notes)
+                "/storage/emulated/0/Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Audio",
+                "/storage/emulated/0/WhatsApp/Media/WhatsApp Audio",
+            )
+
+            val cutoff = System.currentTimeMillis() - maxAgeMs
+            var newestFile: java.io.File? = null
+            var newestTime = 0L
+
+            for (basePath in basePaths) {
+                val dir = java.io.File(basePath)
+                if (!dir.exists() || !dir.canRead()) continue
+
+                // Buscar recursivamente (voice notes ficam em subpastas por data)
+                val files = dir.walkTopDown()
+                    .maxDepth(3)
+                    .filter { it.isFile && it.lastModified() > cutoff }
+                    .filter { it.extension in listOf("opus", "ogg", "m4a", "mp3", "aac", "wav", "3gp") }
+                    .toList()
+
+                for (file in files) {
+                    if (file.lastModified() > newestTime) {
+                        newestTime = file.lastModified()
+                        newestFile = file
+                    }
+                }
+            }
+
+            if (newestFile != null && newestFile.length() <= MAX_AUDIO_SIZE_BYTES) {
+                val bytes = newestFile.readBytes()
+                Log.i(TAG, "Áudio via filesystem: ${newestFile.absolutePath} (${bytes.size} bytes)")
+                return Base64.encodeToString(bytes, Base64.NO_WRAP)
+            } else if (newestFile != null) {
+                Log.w(TAG, "Áudio muito grande: ${newestFile.length()} bytes")
+            }
+        } catch (e: Exception) {
+            Log.d(TAG, "Filesystem access failed: ${e.message}")
+        }
+        return null
+    }
+
+    /**
+     * Método 2: MediaStore.Files (pega .opus que não aparece em MediaStore.Audio).
+     */
+    private fun findAudioViaMediaStoreFiles(context: Context, maxAgeMs: Long): String? {
+        try {
+            val uri = MediaStore.Files.getContentUri("external")
+            val projection = arrayOf(
+                MediaStore.Files.FileColumns._ID,
+                MediaStore.Files.FileColumns.DATE_MODIFIED,
+                MediaStore.Files.FileColumns.SIZE,
+                MediaStore.Files.FileColumns.MIME_TYPE,
+                MediaStore.Files.FileColumns.DATA,
+            )
+
+            val cutoffSeconds = (System.currentTimeMillis() - maxAgeMs) / 1000
+            val selection = "${MediaStore.Files.FileColumns.DATE_MODIFIED} > ? AND " +
+                "(${MediaStore.Files.FileColumns.DATA} LIKE ? OR ${MediaStore.Files.FileColumns.DATA} LIKE ? OR ${MediaStore.Files.FileColumns.DATA} LIKE ?)"
+            val selectionArgs = arrayOf(
+                cutoffSeconds.toString(),
+                "%WhatsApp%Voice Notes%.opus",
+                "%WhatsApp%Voice Notes%.ogg",
+                "%WhatsApp%Audio%"
+            )
+            val sortOrder = "${MediaStore.Files.FileColumns.DATE_MODIFIED} DESC"
+
+            val cursor = context.contentResolver.query(uri, projection, selection, selectionArgs, sortOrder)
+            cursor?.use {
+                if (it.moveToFirst()) {
+                    val id = it.getLong(it.getColumnIndexOrThrow(MediaStore.Files.FileColumns._ID))
+                    val size = it.getLong(it.getColumnIndexOrThrow(MediaStore.Files.FileColumns.SIZE))
+                    val path = it.getString(it.getColumnIndexOrThrow(MediaStore.Files.FileColumns.DATA)) ?: ""
+
+                    if (size > MAX_AUDIO_SIZE_BYTES) {
+                        Log.w(TAG, "Áudio muito grande via Files: $size bytes")
+                        return null
+                    }
+
+                    val audioUri = Uri.withAppendedPath(uri, id.toString())
+                    context.contentResolver.openInputStream(audioUri)?.use { stream ->
+                        val bytes = stream.readBytes()
+                        Log.i(TAG, "Áudio via MediaStore.Files: $path (${bytes.size} bytes)")
+                        return Base64.encodeToString(bytes, Base64.NO_WRAP)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.d(TAG, "MediaStore.Files failed: ${e.message}")
+        }
+        return null
+    }
+
+    /**
+     * Método 3: MediaStore.Audio (fallback clássico).
+     */
+    private fun findAudioViaMediaStoreAudio(context: Context, maxAgeMs: Long): String? {
+        try {
+            val uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
             } else {
                 MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
@@ -97,7 +224,6 @@ object MediaExtractor {
 
             val projection = arrayOf(
                 MediaStore.Audio.Media._ID,
-                MediaStore.Audio.Media.DATE_ADDED,
                 MediaStore.Audio.Media.SIZE,
                 MediaStore.Audio.Media.MIME_TYPE,
             )
@@ -112,34 +238,24 @@ object MediaExtractor {
             )
             val sortOrder = "${MediaStore.Audio.Media.DATE_ADDED} DESC"
 
-            val cursor: Cursor? = context.contentResolver.query(
-                uri, projection, selection, selectionArgs, sortOrder
-            )
-
+            val cursor = context.contentResolver.query(uri, projection, selection, selectionArgs, sortOrder)
             cursor?.use {
                 if (it.moveToFirst()) {
                     val id = it.getLong(it.getColumnIndexOrThrow(MediaStore.Audio.Media._ID))
                     val size = it.getLong(it.getColumnIndexOrThrow(MediaStore.Audio.Media.SIZE))
-                    val mimeType = it.getString(it.getColumnIndexOrThrow(MediaStore.Audio.Media.MIME_TYPE))
 
-                    if (size > MAX_AUDIO_SIZE_BYTES) {
-                        Log.w(TAG, "Áudio muito grande: $size bytes")
-                        return null
-                    }
+                    if (size > MAX_AUDIO_SIZE_BYTES) return null
 
                     val audioUri = Uri.withAppendedPath(uri, id.toString())
-                    val inputStream = context.contentResolver.openInputStream(audioUri)
-                    inputStream?.use { stream ->
+                    context.contentResolver.openInputStream(audioUri)?.use { stream ->
                         val bytes = stream.readBytes()
-                        Log.i(TAG, "Áudio encontrado: ${bytes.size} bytes, mime=$mimeType")
+                        Log.i(TAG, "Áudio via MediaStore.Audio: ${bytes.size} bytes")
                         return Base64.encodeToString(bytes, Base64.NO_WRAP)
                     }
                 }
             }
-
-            Log.d(TAG, "Nenhum áudio recente do WhatsApp encontrado")
         } catch (e: Exception) {
-            Log.e(TAG, "Erro ao buscar áudio do WhatsApp", e)
+            Log.d(TAG, "MediaStore.Audio failed: ${e.message}")
         }
         return null
     }
