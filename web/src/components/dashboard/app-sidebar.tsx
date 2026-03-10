@@ -39,6 +39,7 @@ import {
   ChevronUp,
   BarChart3,
   Bug,
+  Smartphone,
 } from "lucide-react";
 
 const mainItems = [
@@ -54,6 +55,7 @@ const settingsItems = [
   { title: "Prompts", url: "/settings/prompts", icon: FileText },
   { title: "Ações", url: "/settings/actions", icon: Zap },
   { title: "Regras", url: "/settings/rules", icon: Shield },
+  { title: "Aplicativos", url: "/settings/apps", icon: Smartphone },
 ];
 
 export function AppSidebar() {
