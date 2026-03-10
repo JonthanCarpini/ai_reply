@@ -189,8 +189,70 @@ class AIEngine
                 message: 'Transferência solicitada. O revendedor será notificado.',
                 data: ['reason' => $params['reason'] ?? 'Solicitação do cliente'],
             ),
+            'recomendar_aplicativo' => $this->recommendApp($params, $user),
             default => new ActionResult(false, errorMessage: "Ação desconhecida: {$toolName}"),
         };
+    }
+
+    private function recommendApp(array $params, User $user): ActionResult
+    {
+        $deviceType = $params['device_type'] ?? null;
+
+        if (!$deviceType) {
+            return new ActionResult(false, errorMessage: 'Tipo de dispositivo não informado.');
+        }
+
+        $apps = $user->deviceApps()
+            ->where('device_type', $deviceType)
+            ->where('is_active', true)
+            ->orderBy('priority', 'desc')
+            ->orderBy('app_name')
+            ->get();
+
+        if ($apps->isEmpty()) {
+            $deviceTypes = \App\Models\DeviceApp::getDeviceTypes();
+            $deviceName = $deviceTypes[$deviceType] ?? $deviceType;
+            
+            return new ActionResult(
+                success: false,
+                errorMessage: "Nenhum aplicativo cadastrado para {$deviceName}.",
+                data: ['device_type' => $deviceType],
+            );
+        }
+
+        $recommendations = [];
+        foreach ($apps as $app) {
+            $rec = "📱 *{$app->app_name}*";
+            
+            if ($app->app_url) {
+                $rec .= "\n🔗 Link: {$app->app_url}";
+            }
+            
+            if ($app->download_instructions) {
+                $rec .= "\n\n📥 *Como baixar:*\n{$app->download_instructions}";
+            }
+            
+            if ($app->setup_instructions) {
+                $rec .= "\n\n⚙️ *Como configurar:*\n{$app->setup_instructions}";
+            }
+            
+            $recommendations[] = $rec;
+        }
+
+        $deviceTypes = \App\Models\DeviceApp::getDeviceTypes();
+        $deviceName = $deviceTypes[$deviceType] ?? $deviceType;
+        
+        $message = "Para *{$deviceName}*, recomendo:\n\n" . implode("\n\n---\n\n", $recommendations);
+
+        return new ActionResult(
+            success: true,
+            message: $message,
+            data: [
+                'device_type' => $deviceType,
+                'apps_count' => $apps->count(),
+                'apps' => $apps->toArray(),
+            ],
+        );
     }
 
     private function handleRuleBlock(RuleResult $ruleResult, object $prompt, Conversation $conversation): ProcessResult

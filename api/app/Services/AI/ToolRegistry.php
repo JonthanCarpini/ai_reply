@@ -54,6 +54,14 @@ class ToolRegistry
             ],
             'required' => ['reason'],
         ],
+        'recommend_app' => [
+            'name' => 'recomendar_aplicativo',
+            'description' => 'Recomenda o aplicativo ideal para o dispositivo do cliente. Use quando o cliente perguntar qual app usar, como assistir, qual player baixar, ou mencionar seu tipo de dispositivo (Smart TV, celular, TV Box, etc).',
+            'parameters' => [
+                'device_type' => ['type' => 'string', 'description' => 'Tipo de dispositivo: lg_tv, samsung_tv, roku_tv, android_tv, fire_tv, apple_tv, tvbox, android_phone, iphone, windows, mac, linux, chromecast, other'],
+            ],
+            'required' => ['device_type'],
+        ],
     ];
 
     public static function getToolsForActions(Collection $actions): array
@@ -79,6 +87,7 @@ class ToolRegistry
             'listar_pacotes' => 'list_packages',
             'consultar_saldo' => 'check_balance',
             'transferir_humano' => 'transfer_human',
+            'recomendar_aplicativo' => 'recommend_app',
         ];
 
         return $map[$toolName] ?? null;

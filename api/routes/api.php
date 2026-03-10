@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\AnalyticsController;
 use App\Http\Controllers\Api\BillingController;
 use App\Http\Controllers\Api\ConversationController;
 use App\Http\Controllers\Api\DashboardController;
+use App\Http\Controllers\Api\DeviceAppController;
 use App\Http\Controllers\Api\MessageController;
 use App\Http\Controllers\Api\PanelConfigController;
 use App\Http\Controllers\Api\PromptController;
@@ -50,6 +51,15 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/panel/{id}/packages', [PanelConfigController::class, 'packages']);
     Route::put('/panel/{id}/test-package', [PanelConfigController::class, 'updateTestPackage']);
     Route::delete('/panel/{id}', [PanelConfigController::class, 'destroy']);
+
+    // Device Apps
+    Route::get('/device-apps', [DeviceAppController::class, 'index']);
+    Route::get('/device-apps/types', [DeviceAppController::class, 'deviceTypes']);
+    Route::post('/device-apps', [DeviceAppController::class, 'store']);
+    Route::get('/device-apps/{id}', [DeviceAppController::class, 'show']);
+    Route::put('/device-apps/{id}', [DeviceAppController::class, 'update']);
+    Route::delete('/device-apps/{id}', [DeviceAppController::class, 'destroy']);
+    Route::get('/device-apps/by-type/{deviceType}', [DeviceAppController::class, 'getByDeviceType']);
 
     // IA Config
     Route::get('/ai-config', [AiConfigController::class, 'show']);

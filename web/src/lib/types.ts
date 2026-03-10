@@ -172,3 +172,21 @@ export interface ChartData {
   actions: number[];
   tokens: number[];
 }
+
+export interface DeviceApp {
+  id: number;
+  user_id: number;
+  device_type: string;
+  app_name: string;
+  app_url: string | null;
+  download_instructions: string | null;
+  setup_instructions: string | null;
+  is_active: boolean;
+  priority: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DeviceTypeInfo {
+  [key: string]: string;
+}

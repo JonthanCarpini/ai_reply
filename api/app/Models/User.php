@@ -91,6 +91,11 @@ class User extends Authenticatable
         return $this->hasMany(UsageStat::class);
     }
 
+    public function deviceApps(): HasMany
+    {
+        return $this->hasMany(DeviceApp::class);
+    }
+
     public function hasActiveSubscription(): bool
     {
         $sub = $this->subscription;
