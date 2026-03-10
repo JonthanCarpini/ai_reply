@@ -14,9 +14,13 @@ class DeviceApp extends Model
         'user_id',
         'device_type',
         'app_name',
+        'app_code',
         'app_url',
+        'ntdown',
+        'downloader',
         'download_instructions',
         'setup_instructions',
+        'agent_instructions',
         'is_active',
         'priority',
     ];

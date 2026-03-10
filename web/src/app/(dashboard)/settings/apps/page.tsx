@@ -22,9 +22,13 @@ export default function DeviceAppsPage() {
   const [form, setForm] = useState({
     device_type: "",
     app_name: "",
+    app_code: "",
     app_url: "",
+    ntdown: "",
+    downloader: "",
     download_instructions: "",
     setup_instructions: "",
+    agent_instructions: "",
     is_active: true,
     priority: 0,
   });
@@ -52,9 +56,13 @@ export default function DeviceAppsPage() {
     setForm({
       device_type: "",
       app_name: "",
+      app_code: "",
       app_url: "",
+      ntdown: "",
+      downloader: "",
       download_instructions: "",
       setup_instructions: "",
+      agent_instructions: "",
       is_active: true,
       priority: 0,
     });
@@ -66,9 +74,13 @@ export default function DeviceAppsPage() {
     setForm({
       device_type: app.device_type,
       app_name: app.app_name,
+      app_code: app.app_code || "",
       app_url: app.app_url || "",
+      ntdown: app.ntdown || "",
+      downloader: app.downloader || "",
       download_instructions: app.download_instructions || "",
       setup_instructions: app.setup_instructions || "",
+      agent_instructions: app.agent_instructions || "",
       is_active: app.is_active,
       priority: app.priority,
     });
@@ -169,6 +181,36 @@ export default function DeviceAppsPage() {
                 </div>
               </div>
 
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-slate-300">Código App (opcional)</Label>
+                  <Input
+                    placeholder="Ex: com.xciptv.player"
+                    value={form.app_code}
+                    onChange={(e) => setForm({ ...form, app_code: e.target.value })}
+                    className="border-slate-700 bg-slate-800 text-white placeholder:text-slate-500"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-slate-300">ntdown (opcional)</Label>
+                  <Input
+                    placeholder="Ex: ntdown_code"
+                    value={form.ntdown}
+                    onChange={(e) => setForm({ ...form, ntdown: e.target.value })}
+                    className="border-slate-700 bg-slate-800 text-white placeholder:text-slate-500"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-slate-300">Downloader (opcional)</Label>
+                  <Input
+                    placeholder="Ex: downloader_url"
+                    value={form.downloader}
+                    onChange={(e) => setForm({ ...form, downloader: e.target.value })}
+                    className="border-slate-700 bg-slate-800 text-white placeholder:text-slate-500"
+                  />
+                </div>
+              </div>
+
               <div className="space-y-2">
                 <Label className="text-slate-300">URL do App (opcional)</Label>
                 <Input
@@ -200,6 +242,18 @@ export default function DeviceAppsPage() {
                   rows={3}
                   className="border-slate-700 bg-slate-800 text-white placeholder:text-slate-500"
                 />
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-slate-300">Instruções para o Agente (opcional)</Label>
+                <Textarea
+                  placeholder="Orientações e instruções específicas para o agente de IA ao recomendar este aplicativo..."
+                  value={form.agent_instructions}
+                  onChange={(e) => setForm({ ...form, agent_instructions: e.target.value })}
+                  rows={3}
+                  className="border-slate-700 bg-slate-800 text-white placeholder:text-slate-500"
+                />
+                <p className="text-xs text-slate-500">Informações adicionais que o agente deve considerar ao recomendar este app</p>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

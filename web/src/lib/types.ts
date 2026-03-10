@@ -178,9 +178,13 @@ export interface DeviceApp {
   user_id: number;
   device_type: string;
   app_name: string;
+  app_code: string | null;
   app_url: string | null;
+  ntdown: string | null;
+  downloader: string | null;
   download_instructions: string | null;
   setup_instructions: string | null;
+  agent_instructions: string | null;
   is_active: boolean;
   priority: number;
   created_at: string;
