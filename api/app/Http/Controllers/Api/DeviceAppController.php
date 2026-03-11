@@ -134,10 +134,25 @@ class DeviceAppController extends Controller
         ]);
 
         try {
+            // Tentar usar AdminAIConfig primeiro, depois fallback para config do usuário
             $adminConfig = \App\Models\AdminAIConfig::first();
+            $aiConfig = null;
+            $apiKey = null;
+            $model = 'gpt-4o-mini';
             
-            if (!$adminConfig || !$adminConfig->api_key) {
-                return response()->json(['error' => 'IA Admin não configurada.'], 422);
+            if ($adminConfig && $adminConfig->api_key) {
+                $apiKey = $adminConfig->getDecryptedApiKey();
+                $model = $adminConfig->model;
+            } else {
+                // Fallback: usar config de IA do próprio usuário
+                $aiConfig = $request->user()->aiConfig;
+                if (!$aiConfig || !$aiConfig->api_key) {
+                    return response()->json([
+                        'error' => 'Configure sua IA em Configurações > Inteligência Artificial para usar esta funcionalidade.'
+                    ], 422);
+                }
+                $apiKey = $aiConfig->getDecryptedApiKey();
+                $model = $aiConfig->model;
             }
 
             $deviceTypes = \App\Models\DeviceApp::getDeviceTypes();
@@ -160,10 +175,10 @@ class DeviceAppController extends Controller
 
             $prompt = $prompts[$validated['instruction_type']];
 
-            $client = \OpenAI::client($adminConfig->getDecryptedApiKey());
+            $client = \OpenAI::client($apiKey);
             
             $response = $client->chat()->create([
-                'model' => $adminConfig->model,
+                'model' => $model,
                 'messages' => [
                     ['role' => 'system', 'content' => 'Você é um assistente especializado em aplicativos de IPTV e streaming. Forneça instruções claras e precisas.'],
                     ['role' => 'user', 'content' => $prompt],
