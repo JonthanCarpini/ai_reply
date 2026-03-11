@@ -124,7 +124,28 @@ class NotificationBridge(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun isServiceRunning(promise: Promise) {
-        promise.resolve(WhatsAppNotificationListener.isRunning)
+        try {
+            val ctx = reactApplicationContext
+            val enabled = android.provider.Settings.Secure.getString(
+                ctx.contentResolver,
+                "enabled_notification_listeners"
+            )
+            val packageName = ctx.packageName
+            val isEnabled = enabled?.contains(packageName) == true
+            
+            // Se o listener está habilitado mas isRunning é false, tentar reconectar
+            if (isEnabled && !WhatsAppNotificationListener.isRunning) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    WhatsAppNotificationListener.requestRebind(
+                        android.content.ComponentName(ctx, WhatsAppNotificationListener::class.java)
+                    )
+                }
+            }
+            
+            promise.resolve(isEnabled)
+        } catch (e: Exception) {
+            promise.resolve(WhatsAppNotificationListener.isRunning)
+        }
     }
 
     @ReactMethod
