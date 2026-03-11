@@ -150,7 +150,9 @@ export default function DeviceAppsPage() {
 
       toast.success("Instruções geradas com sucesso!");
     } catch (error: any) {
-      toast.error(error.response?.data?.error || "Erro ao gerar instruções.");
+      console.error("Erro ao gerar instruções:", error);
+      const errorMsg = error.response?.data?.error || error.response?.data?.message || "Erro ao gerar instruções.";
+      toast.error(errorMsg);
     } finally {
       setGeneratingInstructions(null);
     }

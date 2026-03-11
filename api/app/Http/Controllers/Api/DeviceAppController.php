@@ -134,14 +134,23 @@ class DeviceAppController extends Controller
         ]);
 
         try {
+            Log::info('[DeviceApp] Iniciando geração de instruções', [
+                'user_id' => $request->user()->id,
+                'validated' => $validated,
+            ]);
+
             // Tentar usar AdminAIConfig primeiro, depois fallback para config do usuário
             $adminConfig = null;
             try {
                 if (class_exists(\App\Models\AdminAIConfig::class)) {
                     $adminConfig = \App\Models\AdminAIConfig::first();
+                    Log::info('[DeviceApp] AdminAIConfig check', [
+                        'exists' => !!$adminConfig,
+                        'has_key' => $adminConfig ? !!$adminConfig->api_key : false,
+                    ]);
                 }
             } catch (\Exception $e) {
-                // AdminAIConfig não existe ou erro ao buscar, usar fallback
+                Log::warning('[DeviceApp] Erro ao buscar AdminAIConfig', ['error' => $e->getMessage()]);
             }
             
             $aiConfig = null;
@@ -151,16 +160,24 @@ class DeviceAppController extends Controller
             if ($adminConfig && $adminConfig->api_key) {
                 $apiKey = $adminConfig->getDecryptedApiKey();
                 $model = $adminConfig->model;
+                Log::info('[DeviceApp] Usando AdminAIConfig', ['model' => $model]);
             } else {
                 // Fallback: usar config de IA do próprio usuário
                 $aiConfig = $request->user()->aiConfig;
+                Log::info('[DeviceApp] Verificando aiConfig do usuário', [
+                    'exists' => !!$aiConfig,
+                    'has_key' => $aiConfig ? !!$aiConfig->api_key : false,
+                ]);
+                
                 if (!$aiConfig || !$aiConfig->api_key) {
+                    Log::warning('[DeviceApp] Nenhuma IA configurada', ['user_id' => $request->user()->id]);
                     return response()->json([
                         'error' => 'Configure sua IA em Configurações > Inteligência Artificial para usar esta funcionalidade.'
                     ], 422);
                 }
                 $apiKey = $aiConfig->getDecryptedApiKey();
                 $model = $aiConfig->model;
+                Log::info('[DeviceApp] Usando aiConfig do usuário', ['model' => $model]);
             }
 
             $deviceTypes = \App\Models\DeviceApp::getDeviceTypes();
