@@ -136,7 +136,7 @@ class NotificationBridge(reactContext: ReactApplicationContext) :
             // Se o listener está habilitado mas isRunning é false, tentar reconectar
             if (isEnabled && !WhatsAppNotificationListener.isRunning) {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                    WhatsAppNotificationListener.requestRebind(
+                    android.service.notification.NotificationListenerService.requestRebind(
                         android.content.ComponentName(ctx, WhatsAppNotificationListener::class.java)
                     )
                 }
