@@ -56,6 +56,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/device-apps', [DeviceAppController::class, 'index']);
     Route::get('/device-apps/types', [DeviceAppController::class, 'deviceTypes']);
     Route::post('/device-apps', [DeviceAppController::class, 'store']);
+    Route::post('/device-apps/generate-instructions', [DeviceAppController::class, 'generateInstructions']);
     Route::get('/device-apps/{id}', [DeviceAppController::class, 'show']);
     Route::put('/device-apps/{id}', [DeviceAppController::class, 'update']);
     Route::delete('/device-apps/{id}', [DeviceAppController::class, 'destroy']);

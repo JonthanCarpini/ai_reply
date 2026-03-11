@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Smartphone, Loader2, Plus, Pencil, Trash2, Tv, Monitor } from "lucide-react";
+import { Smartphone, Loader2, Plus, Pencil, Trash2, Tv, Monitor, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 
 export default function DeviceAppsPage() {
@@ -19,6 +19,8 @@ export default function DeviceAppsPage() {
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [filterDevice, setFilterDevice] = useState<string>("");
+  const [generatingInstructions, setGeneratingInstructions] = useState<string | null>(null);
   const [form, setForm] = useState({
     device_type: "",
     app_name: "",
@@ -120,7 +122,43 @@ export default function DeviceAppsPage() {
     }
   }
 
-  const groupedApps = apps.reduce((acc, app) => {
+  async function generateInstructions(type: 'download' | 'setup' | 'agent') {
+    if (!form.app_name || !form.device_type) {
+      toast.error("Preencha o nome do app e tipo de dispositivo primeiro.");
+      return;
+    }
+
+    setGeneratingInstructions(type);
+    try {
+      const response = await api.post("/device-apps/generate-instructions", {
+        app_name: form.app_name,
+        device_type: form.device_type,
+        app_code: form.app_code,
+        app_url: form.app_url,
+        instruction_type: type,
+      });
+
+      const instructions = response.data.instructions;
+      
+      if (type === 'download') {
+        setForm({ ...form, download_instructions: instructions });
+      } else if (type === 'setup') {
+        setForm({ ...form, setup_instructions: instructions });
+      } else if (type === 'agent') {
+        setForm({ ...form, agent_instructions: instructions });
+      }
+
+      toast.success("Instruções geradas com sucesso!");
+    } catch (error: any) {
+      toast.error(error.response?.data?.error || "Erro ao gerar instruções.");
+    } finally {
+      setGeneratingInstructions(null);
+    }
+  }
+
+  const filteredApps = filterDevice ? apps.filter(app => app.device_type === filterDevice) : apps;
+
+  const groupedApps = filteredApps.reduce((acc, app) => {
     if (!acc[app.device_type]) acc[app.device_type] = [];
     acc[app.device_type].push(app);
     return acc;
@@ -135,12 +173,45 @@ export default function DeviceAppsPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-white">Aplicativos por Dispositivo</h1>
+        <div>
+          <h1 className="text-2xl font-bold text-white">Aplicativos por Dispositivo</h1>
+          <p className="text-sm text-slate-400 mt-1">
+            {filterDevice ? `Filtrando: ${deviceTypes[filterDevice] || filterDevice}` : `${apps.length} aplicativos cadastrados`}
+          </p>
+        </div>
         <Button onClick={() => setShowForm(!showForm)} className="bg-indigo-600 hover:bg-indigo-700">
           <Plus className="mr-2 h-4 w-4" />
           {showForm ? "Cancelar" : "Adicionar App"}
         </Button>
       </div>
+
+      <Card className="border-slate-800 bg-slate-900">
+        <CardContent className="pt-6">
+          <div className="flex items-center gap-4">
+            <Label className="text-slate-300 whitespace-nowrap">Filtrar por dispositivo:</Label>
+            <select
+              value={filterDevice}
+              onChange={(e) => setFilterDevice(e.target.value)}
+              className="flex-1 rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-white"
+            >
+              <option value="">Todos os dispositivos</option>
+              {Object.entries(deviceTypes).map(([key, label]) => (
+                <option key={key} value={key}>{label}</option>
+              ))}
+            </select>
+            {filterDevice && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setFilterDevice("")}
+                className="border-slate-700 text-slate-300 hover:bg-slate-800"
+              >
+                Limpar filtro
+              </Button>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       {showForm && (
         <Card className="border-slate-800 bg-slate-900">
@@ -223,7 +294,24 @@ export default function DeviceAppsPage() {
               </div>
 
               <div className="space-y-2">
-                <Label className="text-slate-300">Instruções de Download (opcional)</Label>
+                <div className="flex items-center justify-between">
+                  <Label className="text-slate-300">Instruções de Download (opcional)</Label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => generateInstructions('download')}
+                    disabled={generatingInstructions === 'download' || !form.app_name || !form.device_type}
+                    className="border-indigo-600 text-indigo-400 hover:bg-indigo-600/10"
+                  >
+                    {generatingInstructions === 'download' ? (
+                      <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                    ) : (
+                      <Sparkles className="mr-2 h-3 w-3" />
+                    )}
+                    Gerar com IA
+                  </Button>
+                </div>
                 <Textarea
                   placeholder="Como baixar o aplicativo..."
                   value={form.download_instructions}
@@ -234,7 +322,24 @@ export default function DeviceAppsPage() {
               </div>
 
               <div className="space-y-2">
-                <Label className="text-slate-300">Instruções de Configuração (opcional)</Label>
+                <div className="flex items-center justify-between">
+                  <Label className="text-slate-300">Instruções de Configuração (opcional)</Label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => generateInstructions('setup')}
+                    disabled={generatingInstructions === 'setup' || !form.app_name || !form.device_type}
+                    className="border-indigo-600 text-indigo-400 hover:bg-indigo-600/10"
+                  >
+                    {generatingInstructions === 'setup' ? (
+                      <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                    ) : (
+                      <Sparkles className="mr-2 h-3 w-3" />
+                    )}
+                    Gerar com IA
+                  </Button>
+                </div>
                 <Textarea
                   placeholder="Como configurar o aplicativo..."
                   value={form.setup_instructions}
@@ -245,7 +350,24 @@ export default function DeviceAppsPage() {
               </div>
 
               <div className="space-y-2">
-                <Label className="text-slate-300">Instruções para o Agente (opcional)</Label>
+                <div className="flex items-center justify-between">
+                  <Label className="text-slate-300">Instruções para o Agente (opcional)</Label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => generateInstructions('agent')}
+                    disabled={generatingInstructions === 'agent' || !form.app_name || !form.device_type}
+                    className="border-indigo-600 text-indigo-400 hover:bg-indigo-600/10"
+                  >
+                    {generatingInstructions === 'agent' ? (
+                      <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                    ) : (
+                      <Sparkles className="mr-2 h-3 w-3" />
+                    )}
+                    Gerar com IA
+                  </Button>
+                </div>
                 <Textarea
                   placeholder="Orientações e instruções específicas para o agente de IA ao recomendar este aplicativo..."
                   value={form.agent_instructions}

@@ -122,4 +122,77 @@ class DeviceAppController extends Controller
 
         return response()->json(['data' => $apps]);
     }
+
+    public function generateInstructions(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'app_name' => ['required', 'string'],
+            'device_type' => ['required', 'string'],
+            'app_code' => ['nullable', 'string'],
+            'app_url' => ['nullable', 'string'],
+            'instruction_type' => ['required', 'in:download,setup,agent'],
+        ]);
+
+        try {
+            $adminConfig = \App\Models\AdminAIConfig::first();
+            
+            if (!$adminConfig || !$adminConfig->api_key) {
+                return response()->json(['error' => 'IA Admin não configurada.'], 422);
+            }
+
+            $deviceTypes = \App\Models\DeviceApp::getDeviceTypes();
+            $deviceName = $deviceTypes[$validated['device_type']] ?? $validated['device_type'];
+
+            $prompts = [
+                'download' => "Crie instruções detalhadas de como baixar e instalar o aplicativo '{$validated['app_name']}' em um {$deviceName}. " .
+                    ($validated['app_url'] ? "URL do app: {$validated['app_url']}. " : "") .
+                    ($validated['app_code'] ? "Código do app: {$validated['app_code']}. " : "") .
+                    "Seja específico e didático, use passos numerados.",
+                
+                'setup' => "Crie instruções detalhadas de como configurar o aplicativo '{$validated['app_name']}' em um {$deviceName} após a instalação. " .
+                    "Inclua como adicionar playlists, configurar login, ajustar qualidade de vídeo, etc. " .
+                    "Seja específico e didático, use passos numerados.",
+                
+                'agent' => "Crie orientações para um agente de IA sobre como recomendar o aplicativo '{$validated['app_name']}' para clientes que usam {$deviceName}. " .
+                    "Inclua: quando recomendar este app, vantagens específicas para este dispositivo, pontos de atenção, " .
+                    "e como explicar a instalação de forma clara. Seja conciso mas completo."
+            ];
+
+            $prompt = $prompts[$validated['instruction_type']];
+
+            $client = \OpenAI::client($adminConfig->getDecryptedApiKey());
+            
+            $response = $client->chat()->create([
+                'model' => $adminConfig->model,
+                'messages' => [
+                    ['role' => 'system', 'content' => 'Você é um assistente especializado em aplicativos de IPTV e streaming. Forneça instruções claras e precisas.'],
+                    ['role' => 'user', 'content' => $prompt],
+                ],
+                'temperature' => 0.7,
+                'max_tokens' => 800,
+            ]);
+
+            $instructions = $response->choices[0]->message->content ?? '';
+
+            Log::info('[DeviceApp] Instruções geradas via IA', [
+                'user_id' => $request->user()->id,
+                'app_name' => $validated['app_name'],
+                'type' => $validated['instruction_type'],
+            ]);
+
+            return response()->json([
+                'instructions' => trim($instructions),
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('[DeviceApp] Erro ao gerar instruções', [
+                'error' => $e->getMessage(),
+                'user_id' => $request->user()->id,
+            ]);
+            
+            return response()->json([
+                'error' => 'Erro ao gerar instruções: ' . $e->getMessage()
+            ], 500);
+        }
+    }
 }
