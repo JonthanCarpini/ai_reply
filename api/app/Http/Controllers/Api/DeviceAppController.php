@@ -143,10 +143,10 @@ class DeviceAppController extends Controller
             $aiConfig = $request->user()->aiConfig;
             Log::info('[DeviceApp] Verificando aiConfig do usuário', [
                 'exists' => !!$aiConfig,
-                'has_key' => $aiConfig ? !!$aiConfig->api_key : false,
+                'has_key' => $aiConfig ? !!$aiConfig->api_key_encrypted : false,
             ]);
             
-            if (!$aiConfig || !$aiConfig->api_key) {
+            if (!$aiConfig || !$aiConfig->api_key_encrypted) {
                 Log::warning('[DeviceApp] Nenhuma IA configurada', ['user_id' => $request->user()->id]);
                 return response()->json([
                     'error' => 'Configure sua IA em Configurações > Inteligência Artificial para usar esta funcionalidade.'
