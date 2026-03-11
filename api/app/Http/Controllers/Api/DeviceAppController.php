@@ -32,9 +32,13 @@ class DeviceAppController extends Controller
         $validated = $request->validate([
             'device_type' => ['required', 'string', 'max:50'],
             'app_name' => ['required', 'string', 'max:255'],
+            'app_code' => ['nullable', 'string', 'max:255'],
             'app_url' => ['nullable', 'string'],
+            'ntdown' => ['nullable', 'string', 'max:255'],
+            'downloader' => ['nullable', 'string', 'max:255'],
             'download_instructions' => ['nullable', 'string'],
             'setup_instructions' => ['nullable', 'string'],
+            'agent_instructions' => ['nullable', 'string'],
             'is_active' => ['boolean'],
             'priority' => ['integer', 'min:0', 'max:100'],
         ]);
@@ -64,9 +68,13 @@ class DeviceAppController extends Controller
         $validated = $request->validate([
             'device_type' => ['sometimes', 'string', 'max:50'],
             'app_name' => ['sometimes', 'string', 'max:255'],
+            'app_code' => ['nullable', 'string', 'max:255'],
             'app_url' => ['nullable', 'string'],
+            'ntdown' => ['nullable', 'string', 'max:255'],
+            'downloader' => ['nullable', 'string', 'max:255'],
             'download_instructions' => ['nullable', 'string'],
             'setup_instructions' => ['nullable', 'string'],
+            'agent_instructions' => ['nullable', 'string'],
             'is_active' => ['boolean'],
             'priority' => ['integer', 'min:0', 'max:100'],
         ]);

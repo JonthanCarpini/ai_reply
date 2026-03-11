@@ -336,6 +336,25 @@ export default function DeviceAppsPage() {
                             </a>
                           </p>
                         )}
+                        {(app.app_code || app.ntdown || app.downloader) && (
+                          <div className="flex gap-4 text-xs text-slate-400 mb-2">
+                            {app.app_code && (
+                              <span>
+                                <span className="font-medium text-slate-300">Código:</span> {app.app_code}
+                              </span>
+                            )}
+                            {app.ntdown && (
+                              <span>
+                                <span className="font-medium text-slate-300">ntdown:</span> {app.ntdown}
+                              </span>
+                            )}
+                            {app.downloader && (
+                              <span>
+                                <span className="font-medium text-slate-300">Downloader:</span> {app.downloader}
+                              </span>
+                            )}
+                          </div>
+                        )}
                         {app.download_instructions && (
                           <div className="text-sm text-slate-400 mb-2">
                             <p className="font-medium text-slate-300">Download:</p>
