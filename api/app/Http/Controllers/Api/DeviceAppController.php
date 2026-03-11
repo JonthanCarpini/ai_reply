@@ -135,7 +135,15 @@ class DeviceAppController extends Controller
 
         try {
             // Tentar usar AdminAIConfig primeiro, depois fallback para config do usuário
-            $adminConfig = \App\Models\AdminAIConfig::first();
+            $adminConfig = null;
+            try {
+                if (class_exists(\App\Models\AdminAIConfig::class)) {
+                    $adminConfig = \App\Models\AdminAIConfig::first();
+                }
+            } catch (\Exception $e) {
+                // AdminAIConfig não existe ou erro ao buscar, usar fallback
+            }
+            
             $aiConfig = null;
             $apiKey = null;
             $model = 'gpt-4o-mini';
