@@ -3,9 +3,12 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\AdminAiConfig;
 use App\Models\DeviceApp;
+use App\Services\AI\AIProviderFactory;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 
 class DeviceAppController extends Controller
@@ -139,23 +142,19 @@ class DeviceAppController extends Controller
                 'validated' => $validated,
             ]);
 
-            // Usar config de IA do usuário
-            $aiConfig = $request->user()->aiConfig;
-            Log::info('[DeviceApp] Verificando aiConfig do usuário', [
-                'exists' => !!$aiConfig,
-                'has_key' => $aiConfig ? !!$aiConfig->api_key_encrypted : false,
-            ]);
-            
-            if (!$aiConfig || !$aiConfig->api_key_encrypted) {
-                Log::warning('[DeviceApp] Nenhuma IA configurada', ['user_id' => $request->user()->id]);
+            $adminConfig = AdminAiConfig::getActive();
+
+            if (!$adminConfig) {
+                Log::warning('[DeviceApp] Nenhum AdminAiConfig ativo encontrado');
                 return response()->json([
-                    'error' => 'Configure sua IA em Configurações > Inteligência Artificial para usar esta funcionalidade.'
+                    'error' => 'A IA do ADMIN não está configurada. Contate o administrador.'
                 ], 422);
             }
-            
-            $apiKey = $aiConfig->getDecryptedApiKey();
-            $model = $aiConfig->model;
-            Log::info('[DeviceApp] Usando aiConfig do usuário', ['model' => $model]);
+
+            Log::info('[DeviceApp] Usando AdminAiConfig ativo', [
+                'provider' => $adminConfig->provider,
+                'model' => $adminConfig->model,
+            ]);
 
             $deviceTypes = \App\Models\DeviceApp::getDeviceTypes();
             $deviceName = $deviceTypes[$validated['device_type']] ?? $validated['device_type'];
@@ -177,30 +176,38 @@ class DeviceAppController extends Controller
 
             $prompt = $prompts[$validated['instruction_type']];
 
-            $response = \Illuminate\Support\Facades\Http::withHeaders([
-                'Authorization' => "Bearer {$apiKey}",
-            ])->timeout(30)->post('https://api.openai.com/v1/chat/completions', [
-                'model' => $model,
-                'messages' => [
-                    ['role' => 'system', 'content' => 'Você é um assistente especializado em aplicativos de IPTV e streaming. Forneça instruções claras e precisas.'],
-                    ['role' => 'user', 'content' => $prompt],
-                ],
-                'temperature' => 0.7,
-                'max_tokens' => 800,
-            ]);
+            $provider = AIProviderFactory::make(
+                $adminConfig->provider,
+                $adminConfig->getDecryptedApiKey()
+            );
 
-            if (!$response->successful()) {
-                Log::error('[DeviceApp] OpenAI API error', [
-                    'status' => $response->status(),
-                    'body' => $response->body(),
+            $options = [
+                'model' => $adminConfig->model,
+                'temperature' => $adminConfig->temperature,
+                'max_tokens' => min((int) $adminConfig->max_tokens, 800),
+            ];
+
+            $response = $provider->chat(
+                'Você é um assistente especializado em aplicativos de IPTV e streaming. Forneça instruções claras e precisas.',
+                new Collection(),
+                $prompt,
+                [],
+                $options
+            );
+
+            $instructions = trim($response->content ?? '');
+
+            if ($instructions === '') {
+                Log::error('[DeviceApp] Resposta vazia da IA admin', [
+                    'provider' => $adminConfig->provider,
+                    'model' => $adminConfig->model,
+                    'instruction_type' => $validated['instruction_type'],
                 ]);
+
                 return response()->json([
-                    'error' => 'Erro ao gerar instruções. Verifique sua API key.'
+                    'error' => 'A IA do ADMIN retornou uma resposta vazia. Verifique a configuração do provider.'
                 ], 500);
             }
-
-            $data = $response->json();
-            $instructions = $data['choices'][0]['message']['content'] ?? '';
 
             Log::info('[DeviceApp] Instruções geradas via IA', [
                 'user_id' => $request->user()->id,
@@ -209,7 +216,7 @@ class DeviceAppController extends Controller
             ]);
 
             return response()->json([
-                'instructions' => trim($instructions),
+                'instructions' => $instructions,
             ]);
 
         } catch (\Exception $e) {
