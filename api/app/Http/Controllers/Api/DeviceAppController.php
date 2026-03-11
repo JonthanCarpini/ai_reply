@@ -177,9 +177,9 @@ class DeviceAppController extends Controller
 
             $prompt = $prompts[$validated['instruction_type']];
 
-            $client = \OpenAI::client($apiKey);
-            
-            $response = $client->chat()->create([
+            $response = \Illuminate\Support\Facades\Http::withHeaders([
+                'Authorization' => "Bearer {$apiKey}",
+            ])->timeout(30)->post('https://api.openai.com/v1/chat/completions', [
                 'model' => $model,
                 'messages' => [
                     ['role' => 'system', 'content' => 'Você é um assistente especializado em aplicativos de IPTV e streaming. Forneça instruções claras e precisas.'],
@@ -189,7 +189,18 @@ class DeviceAppController extends Controller
                 'max_tokens' => 800,
             ]);
 
-            $instructions = $response->choices[0]->message->content ?? '';
+            if (!$response->successful()) {
+                Log::error('[DeviceApp] OpenAI API error', [
+                    'status' => $response->status(),
+                    'body' => $response->body(),
+                ]);
+                return response()->json([
+                    'error' => 'Erro ao gerar instruções. Verifique sua API key.'
+                ], 500);
+            }
+
+            $data = $response->json();
+            $instructions = $data['choices'][0]['message']['content'] ?? '';
 
             Log::info('[DeviceApp] Instruções geradas via IA', [
                 'user_id' => $request->user()->id,
