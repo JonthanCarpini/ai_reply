@@ -22,6 +22,7 @@ interface AdminAiKnowledge {
   id: number;
   name: string;
   system_prompt: string;
+  apps_knowledge: string | null;
   description: string | null;
   is_active: boolean;
   created_at: string;
@@ -31,6 +32,7 @@ interface AdminAiKnowledge {
 const emptyForm = {
   name: "",
   system_prompt: "",
+  apps_knowledge: "",
   description: "",
 };
 
@@ -65,6 +67,7 @@ export default function AiKnowledgePage() {
     setForm({
       name: item.name,
       system_prompt: item.system_prompt,
+      apps_knowledge: item.apps_knowledge || "",
       description: item.description || "",
     });
     setDialogOpen(true);
@@ -138,6 +141,12 @@ export default function AiKnowledgePage() {
               {item.description && (
                 <p className="text-sm text-muted-foreground">{item.description}</p>
               )}
+              {item.apps_knowledge && (
+                <div className="rounded-md border border-slate-800 bg-slate-950/40 p-3">
+                  <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-400">Knowledge de aplicativos</p>
+                  <p className="line-clamp-4 whitespace-pre-wrap text-xs text-slate-300">{item.apps_knowledge}</p>
+                </div>
+              )}
               <pre className="max-h-40 overflow-auto rounded-md bg-muted p-3 text-xs whitespace-pre-wrap">
                 {item.system_prompt.substring(0, 500)}
                 {item.system_prompt.length > 500 && "..."}
@@ -196,6 +205,17 @@ export default function AiKnowledgePage() {
                 className="font-mono text-sm"
               />
               <p className="text-xs text-muted-foreground mt-1">{form.system_prompt.length} / 50000 caracteres</p>
+            </div>
+            <div>
+              <Label>Knowledge de Aplicativos</Label>
+              <Textarea
+                value={form.apps_knowledge}
+                onChange={(e) => setForm({ ...form, apps_knowledge: e.target.value })}
+                placeholder="Adicione conhecimento específico sobre aplicativos: quais apps recomendar por dispositivo, diferenças entre apps, vantagens, limitações, códigos, downloader, fluxo de instalação e regras para o Jarbs considerar ao gerar instruções e prompts."
+                rows={12}
+                className="font-mono text-sm"
+              />
+              <p className="text-xs text-muted-foreground mt-1">{form.apps_knowledge.length} / 50000 caracteres</p>
             </div>
           </div>
           <DialogFooter>

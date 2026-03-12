@@ -21,6 +21,7 @@ class AdminAiKnowledgeController extends Controller
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'system_prompt' => ['required', 'string', 'max:50000'],
+            'apps_knowledge' => ['nullable', 'string', 'max:50000'],
             'description' => ['nullable', 'string', 'max:1000'],
         ]);
 
@@ -36,6 +37,7 @@ class AdminAiKnowledgeController extends Controller
         $validated = $request->validate([
             'name' => ['sometimes', 'string', 'max:255'],
             'system_prompt' => ['sometimes', 'string', 'max:50000'],
+            'apps_knowledge' => ['nullable', 'string', 'max:50000'],
             'description' => ['nullable', 'string', 'max:1000'],
         ]);
 

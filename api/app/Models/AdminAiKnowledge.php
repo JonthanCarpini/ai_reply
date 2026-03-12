@@ -11,6 +11,7 @@ class AdminAiKnowledge extends Model
     protected $fillable = [
         'name',
         'system_prompt',
+        'apps_knowledge',
         'description',
         'is_active',
     ];
@@ -25,5 +26,17 @@ class AdminAiKnowledge extends Model
     public static function getActive(): ?self
     {
         return static::where('is_active', true)->first();
+    }
+
+    public function getComposedSystemPrompt(): string
+    {
+        $basePrompt = trim((string) $this->system_prompt);
+        $appsKnowledge = trim((string) ($this->apps_knowledge ?? ''));
+
+        if ($appsKnowledge === '') {
+            return $basePrompt;
+        }
+
+        return trim($basePrompt . "\n\n=== KNOWLEDGE DE APLICATIVOS ===\n" . $appsKnowledge);
     }
 }

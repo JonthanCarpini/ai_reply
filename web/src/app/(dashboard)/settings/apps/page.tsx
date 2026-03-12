@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
 import api from "@/lib/api";
 import type { DeviceApp, DeviceTypeInfo } from "@/lib/types";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,6 +12,34 @@ import { Badge } from "@/components/ui/badge";
 import { Smartphone, Loader2, Plus, Pencil, Trash2, Tv, Monitor, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 
+type DeviceAppForm = {
+  device_type: string;
+  app_name: string;
+  app_code: string;
+  app_url: string;
+  ntdown: string;
+  downloader: string;
+  download_instructions: string;
+  setup_instructions: string;
+  agent_instructions: string;
+  is_active: boolean;
+  priority: number;
+};
+
+const initialForm: DeviceAppForm = {
+  device_type: "",
+  app_name: "",
+  app_code: "",
+  app_url: "",
+  ntdown: "",
+  downloader: "",
+  download_instructions: "",
+  setup_instructions: "",
+  agent_instructions: "",
+  is_active: true,
+  priority: 0,
+};
+
 export default function DeviceAppsPage() {
   const [apps, setApps] = useState<DeviceApp[]>([]);
   const [deviceTypes, setDeviceTypes] = useState<DeviceTypeInfo>({});
@@ -21,19 +49,7 @@ export default function DeviceAppsPage() {
   const [showForm, setShowForm] = useState(false);
   const [filterDevice, setFilterDevice] = useState<string>("");
   const [generatingInstructions, setGeneratingInstructions] = useState<string | null>(null);
-  const [form, setForm] = useState({
-    device_type: "",
-    app_name: "",
-    app_code: "",
-    app_url: "",
-    ntdown: "",
-    downloader: "",
-    download_instructions: "",
-    setup_instructions: "",
-    agent_instructions: "",
-    is_active: true,
-    priority: 0,
-  });
+  const [form, setForm] = useState<DeviceAppForm>(initialForm);
 
   useEffect(() => {
     loadData();
@@ -55,19 +71,7 @@ export default function DeviceAppsPage() {
   }
 
   function resetForm() {
-    setForm({
-      device_type: "",
-      app_name: "",
-      app_code: "",
-      app_url: "",
-      ntdown: "",
-      downloader: "",
-      download_instructions: "",
-      setup_instructions: "",
-      agent_instructions: "",
-      is_active: true,
-      priority: 0,
-    });
+    setForm(initialForm);
     setEditingId(null);
     setShowForm(false);
   }
@@ -90,7 +94,11 @@ export default function DeviceAppsPage() {
     setShowForm(true);
   }
 
-  async function handleSubmit(e: React.FormEvent) {
+  function updateFormField<K extends keyof DeviceAppForm>(field: K, value: DeviceAppForm[K]) {
+    setForm((current: DeviceAppForm) => ({ ...current, [field]: value }));
+  }
+
+  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setSaving(true);
     try {
@@ -122,7 +130,7 @@ export default function DeviceAppsPage() {
     }
   }
 
-  async function generateInstructions(type: 'download' | 'setup' | 'agent') {
+  async function generateInstructions(type: "download" | "setup" | "agent") {
     if (!form.app_name || !form.device_type) {
       toast.error("Preencha o nome do app e tipo de dispositivo primeiro.");
       return;
@@ -139,37 +147,54 @@ export default function DeviceAppsPage() {
       });
 
       const instructions = response.data.instructions;
-      
-      if (type === 'download') {
-        setForm({ ...form, download_instructions: instructions });
-      } else if (type === 'setup') {
-        setForm({ ...form, setup_instructions: instructions });
-      } else if (type === 'agent') {
-        setForm({ ...form, agent_instructions: instructions });
+
+      if (type === "download") {
+        updateFormField("download_instructions", instructions);
+      } else if (type === "setup") {
+        updateFormField("setup_instructions", instructions);
+      } else if (type === "agent") {
+        updateFormField("agent_instructions", instructions);
       }
 
       toast.success("Instruções geradas com sucesso!");
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const typedError = error as { response?: { data?: { error?: string; message?: string } } };
       console.error("Erro ao gerar instruções:", error);
-      const errorMsg = error.response?.data?.error || error.response?.data?.message || "Erro ao gerar instruções.";
+      const errorMsg = typedError.response?.data?.error || typedError.response?.data?.message || "Erro ao gerar instruções.";
       toast.error(errorMsg);
     } finally {
       setGeneratingInstructions(null);
     }
   }
 
-  const filteredApps = filterDevice ? apps.filter(app => app.device_type === filterDevice) : apps;
+  const filteredApps = filterDevice ? apps.filter((app: DeviceApp) => app.device_type === filterDevice) : apps;
 
-  const groupedApps = filteredApps.reduce((acc, app) => {
+  const groupedApps = filteredApps.reduce<Record<string, DeviceApp[]>>((acc, app: DeviceApp) => {
     if (!acc[app.device_type]) acc[app.device_type] = [];
     acc[app.device_type].push(app);
     return acc;
-  }, {} as Record<string, DeviceApp[]>);
+  }, {});
+  const groupedAppEntries = Object.entries(groupedApps) as [string, DeviceApp[]][];
 
   const getDeviceIcon = (type: string) => {
     if (type.includes("tv")) return <Tv className="h-4 w-4" />;
     if (type.includes("phone") || type.includes("iphone")) return <Smartphone className="h-4 w-4" />;
     return <Monitor className="h-4 w-4" />;
+  };
+
+  const getPreviewText = (value?: string | null, maxLength = 140) => {
+    if (!value) return "";
+    const normalized = value.replace(/\s+/g, " ").trim();
+    if (normalized.length <= maxLength) return normalized;
+    return `${normalized.slice(0, maxLength)}...`;
+  };
+
+  const getConfigItems = (app: DeviceApp) => {
+    return [
+      app.app_code ? { label: "Código", value: app.app_code } : null,
+      app.ntdown ? { label: "ntdown", value: app.ntdown } : null,
+      app.downloader ? { label: "Downloader", value: app.downloader } : null,
+    ].filter(Boolean) as { label: string; value: string }[];
   };
 
   return (
@@ -193,7 +218,7 @@ export default function DeviceAppsPage() {
             <Label className="text-slate-300 whitespace-nowrap">Filtrar por dispositivo:</Label>
             <select
               value={filterDevice}
-              onChange={(e) => setFilterDevice(e.target.value)}
+              onChange={(e: ChangeEvent<HTMLSelectElement>) => setFilterDevice(e.target.value)}
               className="flex-1 rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-white"
             >
               <option value="">Todos os dispositivos</option>
@@ -232,7 +257,7 @@ export default function DeviceAppsPage() {
                   <Label className="text-slate-300">Tipo de Dispositivo</Label>
                   <select
                     value={form.device_type}
-                    onChange={(e) => setForm({ ...form, device_type: e.target.value })}
+                    onChange={(e: ChangeEvent<HTMLSelectElement>) => updateFormField("device_type", e.target.value)}
                     required
                     className="w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-white"
                   >
@@ -247,7 +272,7 @@ export default function DeviceAppsPage() {
                   <Input
                     placeholder="Ex: XCIPTV Player"
                     value={form.app_name}
-                    onChange={(e) => setForm({ ...form, app_name: e.target.value })}
+                    onChange={(e: ChangeEvent<HTMLInputElement>) => updateFormField("app_name", e.target.value)}
                     required
                     className="border-slate-700 bg-slate-800 text-white placeholder:text-slate-500"
                   />
@@ -260,7 +285,7 @@ export default function DeviceAppsPage() {
                   <Input
                     placeholder="Ex: com.xciptv.player"
                     value={form.app_code}
-                    onChange={(e) => setForm({ ...form, app_code: e.target.value })}
+                    onChange={(e: ChangeEvent<HTMLInputElement>) => updateFormField("app_code", e.target.value)}
                     className="border-slate-700 bg-slate-800 text-white placeholder:text-slate-500"
                   />
                 </div>
@@ -269,7 +294,7 @@ export default function DeviceAppsPage() {
                   <Input
                     placeholder="Ex: ntdown_code"
                     value={form.ntdown}
-                    onChange={(e) => setForm({ ...form, ntdown: e.target.value })}
+                    onChange={(e: ChangeEvent<HTMLInputElement>) => updateFormField("ntdown", e.target.value)}
                     className="border-slate-700 bg-slate-800 text-white placeholder:text-slate-500"
                   />
                 </div>
@@ -278,7 +303,7 @@ export default function DeviceAppsPage() {
                   <Input
                     placeholder="Ex: downloader_url"
                     value={form.downloader}
-                    onChange={(e) => setForm({ ...form, downloader: e.target.value })}
+                    onChange={(e: ChangeEvent<HTMLInputElement>) => updateFormField("downloader", e.target.value)}
                     className="border-slate-700 bg-slate-800 text-white placeholder:text-slate-500"
                   />
                 </div>
@@ -290,7 +315,7 @@ export default function DeviceAppsPage() {
                   type="url"
                   placeholder="https://..."
                   value={form.app_url}
-                  onChange={(e) => setForm({ ...form, app_url: e.target.value })}
+                  onChange={(e: ChangeEvent<HTMLInputElement>) => updateFormField("app_url", e.target.value)}
                   className="border-slate-700 bg-slate-800 text-white placeholder:text-slate-500"
                 />
               </div>
@@ -317,7 +342,7 @@ export default function DeviceAppsPage() {
                 <Textarea
                   placeholder="Como baixar o aplicativo..."
                   value={form.download_instructions}
-                  onChange={(e) => setForm({ ...form, download_instructions: e.target.value })}
+                  onChange={(e: ChangeEvent<HTMLTextAreaElement>) => updateFormField("download_instructions", e.target.value)}
                   rows={3}
                   className="border-slate-700 bg-slate-800 text-white placeholder:text-slate-500"
                 />
@@ -345,7 +370,7 @@ export default function DeviceAppsPage() {
                 <Textarea
                   placeholder="Como configurar o aplicativo..."
                   value={form.setup_instructions}
-                  onChange={(e) => setForm({ ...form, setup_instructions: e.target.value })}
+                  onChange={(e: ChangeEvent<HTMLTextAreaElement>) => updateFormField("setup_instructions", e.target.value)}
                   rows={3}
                   className="border-slate-700 bg-slate-800 text-white placeholder:text-slate-500"
                 />
@@ -373,7 +398,7 @@ export default function DeviceAppsPage() {
                 <Textarea
                   placeholder="Orientações e instruções específicas para o agente de IA ao recomendar este aplicativo..."
                   value={form.agent_instructions}
-                  onChange={(e) => setForm({ ...form, agent_instructions: e.target.value })}
+                  onChange={(e: ChangeEvent<HTMLTextAreaElement>) => updateFormField("agent_instructions", e.target.value)}
                   rows={3}
                   className="border-slate-700 bg-slate-800 text-white placeholder:text-slate-500"
                 />
@@ -388,7 +413,7 @@ export default function DeviceAppsPage() {
                     min="0"
                     max="100"
                     value={form.priority}
-                    onChange={(e) => setForm({ ...form, priority: parseInt(e.target.value) || 0 })}
+                    onChange={(e: ChangeEvent<HTMLInputElement>) => updateFormField("priority", Number.parseInt(e.target.value, 10) || 0)}
                     className="border-slate-700 bg-slate-800 text-white"
                   />
                   <p className="text-xs text-slate-500">Apps com maior prioridade aparecem primeiro</p>
@@ -398,7 +423,7 @@ export default function DeviceAppsPage() {
                     type="checkbox"
                     id="is_active"
                     checked={form.is_active}
-                    onChange={(e) => setForm({ ...form, is_active: e.target.checked })}
+                    onChange={(e: ChangeEvent<HTMLInputElement>) => updateFormField("is_active", e.target.checked)}
                     className="h-4 w-4 rounded border-slate-700 bg-slate-800"
                   />
                   <Label htmlFor="is_active" className="text-slate-300 cursor-pointer">
@@ -425,7 +450,7 @@ export default function DeviceAppsPage() {
         <div className="flex items-center justify-center py-12">
           <Loader2 className="h-8 w-8 animate-spin text-indigo-400" />
         </div>
-      ) : Object.keys(groupedApps).length === 0 ? (
+      ) : groupedAppEntries.length === 0 ? (
         <Card className="border-slate-800 bg-slate-900">
           <CardContent className="py-12 text-center">
             <Smartphone className="mx-auto h-12 w-12 text-slate-600 mb-4" />
@@ -435,7 +460,7 @@ export default function DeviceAppsPage() {
         </Card>
       ) : (
         <div className="space-y-4">
-          {Object.entries(groupedApps).map(([deviceType, deviceApps]) => (
+          {groupedAppEntries.map(([deviceType, deviceApps]) => (
             <Card key={deviceType} className="border-slate-800 bg-slate-900">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-white">
@@ -444,63 +469,74 @@ export default function DeviceAppsPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-3">
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                   {deviceApps.map((app) => (
-                    <div key={app.id} className="flex items-start justify-between rounded-lg border border-slate-800 bg-slate-800/50 p-4">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-2">
-                          <p className="font-medium text-white">{app.app_name}</p>
-                          {!app.is_active && <Badge variant="secondary" className="text-xs">Inativo</Badge>}
-                          {app.priority > 0 && <Badge className="bg-indigo-600 text-xs">Prioridade {app.priority}</Badge>}
+                    <Card key={app.id} className="border-slate-800 bg-slate-950/60">
+                      <CardHeader className="space-y-3 pb-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="space-y-2">
+                            <CardTitle className="text-base text-white">{app.app_name}</CardTitle>
+                            <div className="flex flex-wrap gap-2">
+                              <Badge variant={app.is_active ? "default" : "secondary"} className={app.is_active ? "bg-emerald-600" : ""}>
+                                {app.is_active ? "Ativo" : "Inativo"}
+                              </Badge>
+                              {app.priority > 0 && <Badge className="bg-indigo-600 text-xs">Prioridade {app.priority}</Badge>}
+                              {app.app_url && <Badge variant="outline">Com link</Badge>}
+                            </div>
+                          </div>
+                          <div className="flex gap-1">
+                            <Button variant="ghost" size="icon" onClick={() => handleEdit(app)} className="text-indigo-400 hover:text-indigo-300">
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button variant="ghost" size="icon" onClick={() => handleDelete(app.id)} className="text-red-400 hover:text-red-300">
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
                         </div>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
                         {app.app_url && (
-                          <p className="text-sm text-slate-400 mb-2">
-                            <a href={app.app_url} target="_blank" rel="noopener noreferrer" className="hover:text-indigo-400 underline">
-                              {app.app_url}
-                            </a>
-                          </p>
+                          <a href={app.app_url} target="_blank" rel="noopener noreferrer" className="block truncate text-sm text-indigo-400 hover:text-indigo-300 hover:underline">
+                            {app.app_url}
+                          </a>
                         )}
-                        {(app.app_code || app.ntdown || app.downloader) && (
-                          <div className="flex gap-4 text-xs text-slate-400 mb-2">
-                            {app.app_code && (
-                              <span>
-                                <span className="font-medium text-slate-300">Código:</span> {app.app_code}
-                              </span>
-                            )}
-                            {app.ntdown && (
-                              <span>
-                                <span className="font-medium text-slate-300">ntdown:</span> {app.ntdown}
-                              </span>
-                            )}
-                            {app.downloader && (
-                              <span>
-                                <span className="font-medium text-slate-300">Downloader:</span> {app.downloader}
-                              </span>
-                            )}
+
+                        {getConfigItems(app).length > 0 && (
+                          <div className="space-y-2 rounded-lg border border-slate-800 bg-slate-900/70 p-3">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Configuração</p>
+                            <div className="space-y-1.5 text-sm text-slate-300">
+                              {getConfigItems(app).map((item) => (
+                                <div key={`${app.id}-${item.label}`} className="flex gap-2">
+                                  <span className="min-w-20 text-slate-500">{item.label}:</span>
+                                  <span className="truncate">{item.value}</span>
+                                </div>
+                              ))}
+                            </div>
                           </div>
                         )}
-                        {app.download_instructions && (
-                          <div className="text-sm text-slate-400 mb-2">
-                            <p className="font-medium text-slate-300">Download:</p>
-                            <p className="whitespace-pre-wrap">{app.download_instructions}</p>
-                          </div>
-                        )}
-                        {app.setup_instructions && (
-                          <div className="text-sm text-slate-400">
-                            <p className="font-medium text-slate-300">Configuração:</p>
-                            <p className="whitespace-pre-wrap">{app.setup_instructions}</p>
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex gap-2 ml-4">
-                        <Button variant="ghost" size="icon" onClick={() => handleEdit(app)} className="text-indigo-400 hover:text-indigo-300">
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button variant="ghost" size="icon" onClick={() => handleDelete(app.id)} className="text-red-400 hover:text-red-300">
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
+
+                        <div className="space-y-3">
+                          {app.download_instructions && (
+                            <div className="rounded-lg border border-slate-800 bg-slate-900/70 p-3">
+                              <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Download</p>
+                              <p className="text-sm text-slate-300">{getPreviewText(app.download_instructions)}</p>
+                            </div>
+                          )}
+                          {app.setup_instructions && (
+                            <div className="rounded-lg border border-slate-800 bg-slate-900/70 p-3">
+                              <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Configuração</p>
+                              <p className="text-sm text-slate-300">{getPreviewText(app.setup_instructions)}</p>
+                            </div>
+                          )}
+                          {app.agent_instructions && (
+                            <div className="rounded-lg border border-slate-800 bg-slate-900/70 p-3">
+                              <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Agente</p>
+                              <p className="text-sm text-slate-300">{getPreviewText(app.agent_instructions)}</p>
+                            </div>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
                   ))}
                 </div>
               </CardContent>

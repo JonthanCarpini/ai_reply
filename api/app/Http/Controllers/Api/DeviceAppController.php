@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\AdminAiConfig;
+use App\Models\AdminAiKnowledge;
 use App\Models\DeviceApp;
 use App\Services\AI\AIProviderFactory;
 use Illuminate\Http\JsonResponse;
@@ -156,6 +157,8 @@ class DeviceAppController extends Controller
                 'model' => $adminConfig->model,
             ]);
 
+            $knowledge = AdminAiKnowledge::getActive();
+
             $deviceTypes = \App\Models\DeviceApp::getDeviceTypes();
             $deviceName = $deviceTypes[$validated['device_type']] ?? $validated['device_type'];
 
@@ -187,8 +190,13 @@ class DeviceAppController extends Controller
                 'max_tokens' => min((int) $adminConfig->max_tokens, 800),
             ];
 
-            $response = $provider->chat(
+            $systemPrompt = trim(implode("\n\n", array_filter([
                 'Você é um assistente especializado em aplicativos de IPTV e streaming. Forneça instruções claras e precisas.',
+                $knowledge?->getComposedSystemPrompt(),
+            ])));
+
+            $response = $provider->chat(
+                $systemPrompt,
                 new Collection(),
                 $prompt,
                 [],

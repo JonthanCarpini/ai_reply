@@ -185,7 +185,7 @@ class JarbsController extends Controller
         ];
 
         $response = $provider->chat(
-            $knowledge->system_prompt,
+            $knowledge->getComposedSystemPrompt(),
             collect([]),
             $userMessage,
             [],
