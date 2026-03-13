@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use App\Models\Plan;
 use App\Models\Subscription;
+use App\Services\AgentDefaultsService;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -13,7 +14,7 @@ use Illuminate\Validation\Rules\Password;
 
 class RegisterController extends Controller
 {
-    public function __invoke(Request $request): JsonResponse
+    public function __invoke(Request $request, AgentDefaultsService $agentDefaultsService): JsonResponse
     {
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
@@ -42,7 +43,7 @@ class RegisterController extends Controller
             ]);
         }
 
-        $this->seedDefaultActions($user);
+        $agentDefaultsService->ensureForUser($user);
 
         $token = $user->createToken('app')->plainTextToken;
 
@@ -50,21 +51,5 @@ class RegisterController extends Controller
             'user' => $user->load('subscription.plan'),
             'token' => $token,
         ], 201);
-    }
-
-    private function seedDefaultActions(User $user): void
-    {
-        $defaults = [
-            ['action_type' => 'create_test', 'label' => 'Criar Teste', 'enabled' => true],
-            ['action_type' => 'renew_client', 'label' => 'Renovar Cliente', 'enabled' => true],
-            ['action_type' => 'check_status', 'label' => 'Consultar Status', 'enabled' => true],
-            ['action_type' => 'list_packages', 'label' => 'Listar Pacotes', 'enabled' => true],
-            ['action_type' => 'check_balance', 'label' => 'Consultar Saldo', 'enabled' => false],
-            ['action_type' => 'transfer_human', 'label' => 'Transferir p/ Humano', 'enabled' => true],
-        ];
-
-        foreach ($defaults as $action) {
-            $user->actions()->create($action);
-        }
     }
 }

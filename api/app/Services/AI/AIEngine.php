@@ -6,6 +6,7 @@ use App\Models\ActionLog;
 use App\Models\Conversation;
 use App\Models\User;
 use App\Models\UsageStat;
+use App\Services\AgentDefaultsService;
 use App\Services\AI\DTOs\ActionResult;
 use App\Services\AI\DTOs\AIResponse;
 use App\Services\ConversationJourneyService;
@@ -23,6 +24,7 @@ class AIEngine
         private readonly ConversationContextService $conversationContextService,
         private readonly ToolExecutionOrchestrator $toolExecutionOrchestrator,
         private readonly ReplyPolicyService $replyPolicyService,
+        private readonly AgentDefaultsService $agentDefaultsService,
         private readonly RuleEngine $ruleEngine,
     ) {}
 
@@ -35,6 +37,8 @@ class AIEngine
         ?string $correlationId = null,
         ?array $sourceMetadata = null,
     ): ProcessResult {
+        $this->agentDefaultsService->ensureForUser($user);
+
         $aiConfig = $user->aiConfig;
         $prompt = $user->activePrompt;
         $panelConfig = $user->panelConfig;

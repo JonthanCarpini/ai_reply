@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type ChangeEvent, type Dispatch, type FormEvent, type SetStateAction } from "react";
 import api from "@/lib/api";
+import { agentPromptDefaults } from "@/lib/agent-defaults";
 import type { Prompt } from "@/lib/types";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,17 +14,6 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { FileText, Plus, Loader2, Star, Pencil, Trash2, Sparkles, Wand2 } from "lucide-react";
 import { toast } from "sonner";
-
-const defaultPrompt = `Você é o assistente virtual da {loja_nome}. Seu nome é {assistente_nome}.
-
-REGRAS:
-- Seja educado, objetivo e profissional
-- Responda em português brasileiro
-- Use emojis moderadamente
-- NUNCA invente informações sobre preços ou pacotes — sempre consulte via ferramenta
-- Quando o cliente pedir teste, crie usando a ferramenta criar_teste
-- Quando o cliente confirmar pagamento, peça o username para renovar
-- Se não souber algo, transfira para atendimento humano`;
 
 interface JarbsStatus {
   available: boolean;
@@ -55,21 +45,23 @@ function createPromptFormState(prompt?: Prompt, generatedPrompt?: string): Promp
   const replyPolicy = prompt?.reply_policy || {};
 
   return {
-    name: prompt?.name || "",
-    system_prompt: generatedPrompt || prompt?.system_prompt || defaultPrompt,
-    greeting_message: prompt?.greeting_message || "",
-    fallback_message: prompt?.fallback_message || "",
-    offline_message: prompt?.offline_message || "",
-    identity: structuredPrompt.identity || "",
-    tone: structuredPrompt.tone || "",
-    permanent_rules: structuredPrompt.permanent_rules || "",
-    automatic_triggers: structuredPrompt.automatic_triggers || "",
-    phase_flow: structuredPrompt.phase_flow || "",
-    response_policy: structuredPrompt.response_policy || "",
-    max_chars: replyPolicy.max_chars || 1200,
-    max_tool_steps: replyPolicy.max_tool_steps || 2,
-    enforce_short_reply: Boolean(replyPolicy.enforce_short_reply),
-    blocked_terms: (replyPolicy.blocked_terms || []).join(", "),
+    name: prompt?.name || agentPromptDefaults.name,
+    system_prompt: generatedPrompt || prompt?.system_prompt || agentPromptDefaults.systemPrompt,
+    greeting_message: prompt?.greeting_message || agentPromptDefaults.greetingMessage,
+    fallback_message: prompt?.fallback_message || agentPromptDefaults.fallbackMessage,
+    offline_message: prompt?.offline_message || agentPromptDefaults.offlineMessage,
+    identity: structuredPrompt.identity || agentPromptDefaults.structuredPrompt.identity,
+    tone: structuredPrompt.tone || agentPromptDefaults.structuredPrompt.tone,
+    permanent_rules: structuredPrompt.permanent_rules || agentPromptDefaults.structuredPrompt.permanentRules,
+    automatic_triggers: structuredPrompt.automatic_triggers || agentPromptDefaults.structuredPrompt.automaticTriggers,
+    phase_flow: structuredPrompt.phase_flow || agentPromptDefaults.structuredPrompt.phaseFlow,
+    response_policy: structuredPrompt.response_policy || agentPromptDefaults.structuredPrompt.responsePolicy,
+    max_chars: replyPolicy.max_chars || agentPromptDefaults.replyPolicy.maxChars,
+    max_tool_steps: replyPolicy.max_tool_steps || agentPromptDefaults.replyPolicy.maxToolSteps,
+    enforce_short_reply: typeof replyPolicy.enforce_short_reply === "boolean"
+      ? replyPolicy.enforce_short_reply
+      : agentPromptDefaults.replyPolicy.enforceShortReply,
+    blocked_terms: ((replyPolicy.blocked_terms as string[] | undefined) || agentPromptDefaults.replyPolicy.blockedTerms).join(", "),
   };
 }
 

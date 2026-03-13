@@ -3,13 +3,16 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Services\AgentDefaultsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class PromptController extends Controller
 {
-    public function index(Request $request): JsonResponse
+    public function index(Request $request, AgentDefaultsService $agentDefaultsService): JsonResponse
     {
+        $agentDefaultsService->ensurePrompt($request->user());
+
         $prompts = $request->user()->prompts()->orderByDesc('is_active')->orderByDesc('updated_at')->get();
 
         return response()->json(['data' => $prompts]);
