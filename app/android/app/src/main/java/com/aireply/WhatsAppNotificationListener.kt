@@ -1,7 +1,9 @@
 package com.aireply
 
 import android.app.Notification
+import android.content.ComponentName
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
@@ -70,7 +72,18 @@ class WhatsAppNotificationListener : NotificationListenerService() {
     override fun onListenerDisconnected() {
         super.onListenerDisconnected()
         isRunning = false
+        Log.w(TAG, "Notification listener disconnected")
         NotificationBridge.sendServiceStatus(this, false)
+        NotificationBridge.sendError(this, "Listener de notificações desconectado. Tentando reconectar automaticamente.")
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            try {
+                requestRebind(ComponentName(this, WhatsAppNotificationListener::class.java))
+                Log.i(TAG, "requestRebind triggered from onListenerDisconnected")
+            } catch (e: Exception) {
+                Log.e(TAG, "requestRebind failed on disconnect", e)
+            }
+        }
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {

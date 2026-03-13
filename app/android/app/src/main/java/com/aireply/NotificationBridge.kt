@@ -6,6 +6,8 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import android.service.notification.NotificationListenerService
+import android.util.Log
 import com.facebook.react.bridge.*
 import com.facebook.react.modules.core.DeviceEventManagerModule
 
@@ -13,6 +15,7 @@ class NotificationBridge(reactContext: ReactApplicationContext) :
     ReactContextBaseJavaModule(reactContext) {
 
     companion object {
+        private const val TAG = "NotificationBridge"
         private var reactContextRef: ReactApplicationContext? = null
 
         fun sendServiceStatus(context: Context, running: Boolean) {
@@ -111,8 +114,15 @@ class NotificationBridge(reactContext: ReactApplicationContext) :
             } else {
                 ctx.startService(intent)
             }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                NotificationListenerService.requestRebind(
+                    ComponentName(ctx, WhatsAppNotificationListener::class.java)
+                )
+                Log.i(TAG, "requestRebind triggered from startListenerService")
+            }
             promise.resolve(true)
         } catch (e: Exception) {
+            Log.e(TAG, "startListenerService failed", e)
             promise.reject("START_ERROR", e.message)
         }
     }
@@ -138,18 +148,20 @@ class NotificationBridge(reactContext: ReactApplicationContext) :
             )
             val packageName = ctx.packageName
             val isEnabled = enabled?.contains(packageName) == true
-            
-            // Se o listener está habilitado mas isRunning é false, tentar reconectar
-            if (isEnabled && !WhatsAppNotificationListener.isRunning) {
+            val isRunning = WhatsAppNotificationListener.isRunning
+
+            if (isEnabled && !isRunning) {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                    android.service.notification.NotificationListenerService.requestRebind(
-                        android.content.ComponentName(ctx, WhatsAppNotificationListener::class.java)
+                    NotificationListenerService.requestRebind(
+                        ComponentName(ctx, WhatsAppNotificationListener::class.java)
                     )
                 }
+                Log.w(TAG, "Listener permission enabled but listener disconnected; requestRebind triggered")
             }
-            
-            promise.resolve(isEnabled)
+
+            promise.resolve(isEnabled && isRunning)
         } catch (e: Exception) {
+            Log.e(TAG, "isServiceRunning fallback due to exception", e)
             promise.resolve(WhatsAppNotificationListener.isRunning)
         }
     }
