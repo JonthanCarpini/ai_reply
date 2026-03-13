@@ -14,14 +14,39 @@ interface LogEntry {
   data: Record<string, unknown> | string;
 }
 
+type LogDataObject = Record<string, unknown>;
+
 const TYPE_COLORS: Record<string, string> = {
   APP_NOTIF: "bg-blue-500/20 text-blue-400 border-blue-500/30",
   PROCESS_REQUEST: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
   PROCESS_REPLY: "bg-green-500/20 text-green-400 border-green-500/30",
+  ORCHESTRATION_PLAN: "bg-indigo-500/20 text-indigo-400 border-indigo-500/30",
+  TOOL_STEP_START: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
+  TOOL_STEP_RESULT: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
+  TOOL_BLOCKED: "bg-rose-500/20 text-rose-400 border-rose-500/30",
+  TOOL_LOOP_LIMIT_REACHED: "bg-orange-500/20 text-orange-400 border-orange-500/30",
   SKIP_FROM_ME: "bg-purple-500/20 text-purple-400 border-purple-500/30",
   SKIP_ECHO: "bg-red-500/20 text-red-400 border-red-500/30",
   ECHO_MATCH_EXACT: "bg-red-500/20 text-red-400 border-red-500/30",
 };
+
+function getLogDataObject(data: LogEntry["data"]): LogDataObject | null {
+  if (typeof data !== "object" || data === null || Array.isArray(data)) {
+    return null;
+  }
+
+  return data as LogDataObject;
+}
+
+function getStringValue(data: LogDataObject | null, key: string): string | null {
+  const value = data?.[key];
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function getNumberValue(data: LogDataObject | null, key: string): number | null {
+  const value = data?.[key];
+  return typeof value === "number" ? value : null;
+}
 
 export default function DebugPage() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -63,18 +88,21 @@ export default function DebugPage() {
   const filteredLogs =
     filterType === "ALL"
       ? logs
-      : logs.filter((l) => l.type === filterType);
+      : logs.filter((l: LogEntry) => l.type === filterType);
 
-  const uniqueTypes = Array.from(new Set(logs.map((l) => l.type)));
+  const uniqueTypes = Array.from(new Set(logs.map((l: LogEntry) => l.type)));
 
   const stats = {
     total: logs.length,
-    notifications: logs.filter((l) => l.type === "APP_NOTIF").length,
-    processed: logs.filter((l) => l.type === "PROCESS_REQUEST").length,
-    replies: logs.filter((l) => l.type === "PROCESS_REPLY").length,
-    skipped: logs.filter((l) => l.type.startsWith("SKIP_")).length,
+    notifications: logs.filter((l: LogEntry) => l.type === "APP_NOTIF").length,
+    processed: logs.filter((l: LogEntry) => l.type === "PROCESS_REQUEST").length,
+    replies: logs.filter((l: LogEntry) => l.type === "PROCESS_REPLY").length,
+    orchestrations: logs.filter((l: LogEntry) => l.type === "ORCHESTRATION_PLAN").length,
+    toolSteps: logs.filter((l: LogEntry) => l.type === "TOOL_STEP_START" || l.type === "TOOL_STEP_RESULT").length,
+    blockedTools: logs.filter((l: LogEntry) => l.type === "TOOL_BLOCKED" || l.type === "TOOL_LOOP_LIMIT_REACHED").length,
+    skipped: logs.filter((l: LogEntry) => l.type.startsWith("SKIP_")).length,
     echos: logs.filter(
-      (l) => l.type === "SKIP_ECHO" || l.type === "ECHO_MATCH_EXACT"
+      (l: LogEntry) => l.type === "SKIP_ECHO" || l.type === "ECHO_MATCH_EXACT"
     ).length,
   };
 
@@ -109,7 +137,7 @@ export default function DebugPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
         <Card className="bg-slate-900 border-slate-800">
           <CardContent className="p-3 text-center">
             <p className="text-2xl font-bold text-white">{stats.total}</p>
@@ -138,6 +166,24 @@ export default function DebugPage() {
               {stats.replies}
             </p>
             <p className="text-xs text-slate-400">Respostas</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-slate-900 border-slate-800">
+          <CardContent className="p-3 text-center">
+            <p className="text-2xl font-bold text-indigo-400">{stats.orchestrations}</p>
+            <p className="text-xs text-slate-400">Planos</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-slate-900 border-slate-800">
+          <CardContent className="p-3 text-center">
+            <p className="text-2xl font-bold text-cyan-400">{stats.toolSteps}</p>
+            <p className="text-xs text-slate-400">Steps Tool</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-slate-900 border-slate-800">
+          <CardContent className="p-3 text-center">
+            <p className="text-2xl font-bold text-rose-400">{stats.blockedTools}</p>
+            <p className="text-xs text-slate-400">Bloqueios</p>
           </CardContent>
         </Card>
         <Card className="bg-slate-900 border-slate-800">
@@ -203,8 +249,11 @@ export default function DebugPage() {
                     ? log.data
                     : JSON.stringify(log.data, null, 2);
                 const isExpanded = expanded.has(i);
-                const dataObj =
-                  typeof log.data === "object" ? log.data : null;
+                const dataObj = getLogDataObject(log.data);
+                const correlationId = getStringValue(dataObj, "correlation_id");
+                const resolvedPhase = getStringValue(dataObj, "resolved_phase") || getStringValue(dataObj, "journey_stage");
+                const toolName = getStringValue(dataObj, "tool") || getStringValue(dataObj, "action_type") || getStringValue(dataObj, "remaining_tool");
+                const step = getNumberValue(dataObj, "step") || getNumberValue(dataObj, "steps_executed");
 
                 return (
                   <div
@@ -222,6 +271,26 @@ export default function DebugPage() {
                       >
                         {log.type}
                       </Badge>
+                      {correlationId && (
+                        <Badge variant="outline" className="border-indigo-500/30 text-indigo-300 text-[10px] px-1.5 py-0 font-mono">
+                          {correlationId.slice(0, 18)}
+                        </Badge>
+                      )}
+                      {resolvedPhase && (
+                        <Badge variant="outline" className="border-cyan-500/30 text-cyan-300 text-[10px] px-1.5 py-0">
+                          fase: {resolvedPhase}
+                        </Badge>
+                      )}
+                      {toolName && (
+                        <Badge variant="outline" className="border-emerald-500/30 text-emerald-300 text-[10px] px-1.5 py-0">
+                          {toolName}
+                        </Badge>
+                      )}
+                      {step !== null && (
+                        <Badge variant="outline" className="border-amber-500/30 text-amber-300 text-[10px] px-1.5 py-0">
+                          step {step}
+                        </Badge>
+                      )}
                       {dataObj && (
                         <>
                           {dataObj.contact && (

@@ -28,7 +28,10 @@ class NotificationBridge(reactContext: ReactApplicationContext) :
             contactName: String,
             contactPhone: String,
             message: String,
-            reply: String
+            reply: String,
+            correlationId: String,
+            batchId: String,
+            batchSize: Int
         ) {
             val ctx = reactContextRef ?: return
             val params = Arguments.createMap().apply {
@@ -36,6 +39,9 @@ class NotificationBridge(reactContext: ReactApplicationContext) :
                 putString("contactPhone", contactPhone)
                 putString("message", message)
                 putString("reply", reply)
+                putString("correlationId", correlationId)
+                putString("batchId", batchId)
+                putInt("batchSize", batchSize)
                 putString("timestamp", System.currentTimeMillis().toString())
             }
             sendEvent(ctx, "onMessageProcessed", params)

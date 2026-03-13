@@ -38,11 +38,20 @@ class ConversationManager
             ->map(fn(Message $m) => ['role' => $m->role, 'content' => $m->content]);
     }
 
-    public function saveUserMessage(Conversation $conversation, string $content): Message
+    public function saveUserMessage(
+        Conversation $conversation,
+        string $content,
+        ?array $contextData = null,
+        ?string $correlationId = null,
+        ?array $sourceMetadata = null,
+    ): Message
     {
         $msg = $conversation->messages()->create([
             'role' => 'user',
             'content' => $content,
+            'context_data' => $contextData,
+            'correlation_id' => $correlationId,
+            'source_metadata' => $sourceMetadata,
         ]);
 
         $conversation->increment('message_count');
@@ -62,6 +71,9 @@ class ConversationManager
         ?array $actionParams = null,
         ?array $actionResult = null,
         ?bool $actionSuccess = null,
+        ?array $contextData = null,
+        ?string $correlationId = null,
+        ?array $sourceMetadata = null,
     ): Message {
         $msg = $conversation->messages()->create([
             'role' => 'assistant',
@@ -70,6 +82,9 @@ class ConversationManager
             'action_params' => $actionParams,
             'action_result' => $actionResult,
             'action_success' => $actionSuccess,
+            'context_data' => $contextData,
+            'correlation_id' => $correlationId,
+            'source_metadata' => $sourceMetadata,
             'ai_provider' => $aiResponse->provider,
             'ai_model' => $aiResponse->model,
             'tokens_input' => $aiResponse->tokensInput,
@@ -78,6 +93,7 @@ class ConversationManager
         ]);
 
         $conversation->increment('message_count');
+        $conversation->update(['last_message_at' => now()]);
 
         if ($actionType) {
             $conversation->increment('actions_executed');

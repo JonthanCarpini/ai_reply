@@ -46,6 +46,13 @@ export default function LogsScreen() {
                 <Text style={styles.logMessage} numberOfLines={2}>
                   {item.message || item.response || item.error || item.actionType}
                 </Text>
+                {(item.correlationId || item.batchId || item.batchSize) && (
+                  <Text style={styles.logMeta} numberOfLines={2}>
+                    {item.correlationId ? `Corr: ${item.correlationId}` : ''}
+                    {item.batchId ? `${item.correlationId ? ' · ' : ''}Lote: ${item.batchId}` : ''}
+                    {typeof item.batchSize === 'number' ? `${item.correlationId || item.batchId ? ' · ' : ''}Msgs: ${item.batchSize}` : ''}
+                  </Text>
+                )}
                 <Text style={styles.logTime}>{new Date(item.timestamp).toLocaleTimeString('pt-BR')}</Text>
               </View>
             </View>
@@ -70,5 +77,6 @@ const styles = StyleSheet.create({
   logContent: { flex: 1 },
   logContact: { color: '#fff', fontSize: 13, fontWeight: '700' },
   logMessage: { color: '#94a3b8', fontSize: 12, marginTop: 2 },
+  logMeta: { color: '#60a5fa', fontSize: 11, marginTop: 4 },
   logTime: { color: '#475569', fontSize: 10, marginTop: 4 },
 });

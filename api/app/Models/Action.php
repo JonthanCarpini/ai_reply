@@ -14,6 +14,9 @@ class Action extends Model
         'enabled',
         'params',
         'custom_instructions',
+        'preconditions',
+        'phase_scope',
+        'max_tool_steps',
         'daily_limit',
         'daily_count',
         'count_reset_date',
@@ -24,6 +27,9 @@ class Action extends Model
         return [
             'enabled' => 'boolean',
             'params' => 'array',
+            'preconditions' => 'array',
+            'phase_scope' => 'array',
+            'max_tool_steps' => 'integer',
             'count_reset_date' => 'date',
         ];
     }

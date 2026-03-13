@@ -11,6 +11,8 @@ class Prompt extends Model
         'user_id',
         'name',
         'system_prompt',
+        'structured_prompt',
+        'reply_policy',
         'greeting_message',
         'fallback_message',
         'offline_message',
@@ -22,6 +24,8 @@ class Prompt extends Model
     protected function casts(): array
     {
         return [
+            'structured_prompt' => 'array',
+            'reply_policy' => 'array',
             'custom_variables' => 'array',
             'is_active' => 'boolean',
         ];

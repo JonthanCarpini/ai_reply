@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ElementType } from "react";
 import api from "@/lib/api";
 import type { Action } from "@/lib/types";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,16 +10,17 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Zap, TestTube, RefreshCw, Search, ListOrdered, Wallet, UserRoundX, Loader2 } from "lucide-react";
+import { Zap, TestTube, RefreshCw, Search, ListOrdered, Wallet, UserRoundX, Loader2, Smartphone } from "lucide-react";
 import { toast } from "sonner";
 
-const actionIcons: Record<string, React.ElementType> = {
+const actionIcons: Record<string, ElementType> = {
   create_test: TestTube,
   renew_client: RefreshCw,
   check_status: Search,
   list_packages: ListOrdered,
   check_balance: Wallet,
   transfer_human: UserRoundX,
+  recommend_app: Smartphone,
 };
 
 const actionDescriptions: Record<string, string> = {
@@ -29,7 +30,19 @@ const actionDescriptions: Record<string, string> = {
   list_packages: "Lista pacotes disponíveis com preços.",
   check_balance: "Consulta o saldo de créditos do revendedor.",
   transfer_human: "Transfere para atendimento humano quando a IA não resolve.",
+  recommend_app: "Recomenda aplicativo conforme o dispositivo identificado do cliente.",
 };
+
+function toCsv(values?: string[] | null): string {
+  return (values || []).join(", ");
+}
+
+function parseCsv(value: string): string[] {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
 
 export default function ActionsPage() {
   const [actions, setActions] = useState<Action[]>([]);
@@ -112,7 +125,7 @@ export default function ActionsPage() {
               </CardHeader>
               {action.enabled && (
                 <CardContent className="space-y-3 border-t border-slate-800 pt-3">
-                  <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="grid gap-3 lg:grid-cols-3">
                     <div className="space-y-1">
                       <Label className="text-xs text-slate-400">Limite diário (0 = sem limite)</Label>
                       <Input
@@ -121,6 +134,26 @@ export default function ActionsPage() {
                         value={action.daily_limit}
                         onChange={(e) => updateAction(action.id, { daily_limit: parseInt(e.target.value) || 0 })}
                         className="h-8 border-slate-700 bg-slate-800 text-sm text-white"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs text-slate-400">Máximo de passos por tool</Label>
+                      <Input
+                        type="number"
+                        min="1"
+                        max="3"
+                        defaultValue={action.max_tool_steps || 1}
+                        onBlur={(e) => updateAction(action.id, { max_tool_steps: Math.min(3, Math.max(1, parseInt(e.target.value) || 1)) })}
+                        className="h-8 border-slate-700 bg-slate-800 text-sm text-white"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs text-slate-400">Fases permitidas</Label>
+                      <Input
+                        defaultValue={toCsv(action.phase_scope)}
+                        onBlur={(e) => updateAction(action.id, { phase_scope: parseCsv(e.target.value) })}
+                        placeholder="qualificacao, suporte, teste"
+                        className="h-8 border-slate-700 bg-slate-800 text-sm text-white placeholder:text-slate-500"
                       />
                     </div>
                   </div>
@@ -133,6 +166,50 @@ export default function ActionsPage() {
                       rows={2}
                       className="border-slate-700 bg-slate-800 text-sm text-white placeholder:text-slate-500"
                     />
+                  </div>
+                  <div className="grid gap-3 lg:grid-cols-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs text-slate-400">Parâmetros obrigatórios</Label>
+                      <Input
+                        defaultValue={toCsv(action.preconditions?.required_params)}
+                        onBlur={(e) => updateAction(action.id, {
+                          preconditions: {
+                            ...(action.preconditions || {}),
+                            required_params: parseCsv(e.target.value),
+                          },
+                        })}
+                        placeholder="client_id, package_id"
+                        className="h-8 border-slate-700 bg-slate-800 text-sm text-white placeholder:text-slate-500"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs text-slate-400">Dados coletados obrigatórios</Label>
+                      <Input
+                        defaultValue={toCsv(action.preconditions?.required_collected_data)}
+                        onBlur={(e) => updateAction(action.id, {
+                          preconditions: {
+                            ...(action.preconditions || {}),
+                            required_collected_data: parseCsv(e.target.value),
+                          },
+                        })}
+                        placeholder="device_type, payment_confirmed"
+                        className="h-8 border-slate-700 bg-slate-800 text-sm text-white placeholder:text-slate-500"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs text-slate-400">Etapas bloqueadas</Label>
+                      <Input
+                        defaultValue={toCsv(action.preconditions?.blocked_journey_stages)}
+                        onBlur={(e) => updateAction(action.id, {
+                          preconditions: {
+                            ...(action.preconditions || {}),
+                            blocked_journey_stages: parseCsv(e.target.value),
+                          },
+                        })}
+                        placeholder="human_handoff, renewal_completed"
+                        className="h-8 border-slate-700 bg-slate-800 text-sm text-white placeholder:text-slate-500"
+                      />
+                    </div>
                   </div>
                 </CardContent>
               )}

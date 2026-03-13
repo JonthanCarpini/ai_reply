@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Models\UsageStat;
 use App\Services\AI\DTOs\ActionResult;
 use App\Services\AI\DTOs\AIResponse;
+use App\Services\ConversationJourneyService;
 use App\Services\ConversationManager;
 use App\Services\RuleEngine;
 use App\Services\RuleResult;
@@ -18,6 +19,10 @@ class AIEngine
 {
     public function __construct(
         private readonly ConversationManager $conversationManager,
+        private readonly ConversationJourneyService $conversationJourneyService,
+        private readonly ConversationContextService $conversationContextService,
+        private readonly ToolExecutionOrchestrator $toolExecutionOrchestrator,
+        private readonly ReplyPolicyService $replyPolicyService,
         private readonly RuleEngine $ruleEngine,
     ) {}
 
@@ -27,6 +32,8 @@ class AIEngine
         string $message,
         ?string $contactName = null,
         ?string $whatsappNumber = null,
+        ?string $correlationId = null,
+        ?array $sourceMetadata = null,
     ): ProcessResult {
         $aiConfig = $user->aiConfig;
         $prompt = $user->activePrompt;
@@ -62,83 +69,117 @@ class AIEngine
             );
         }
 
-        $this->conversationManager->saveUserMessage($conversation, $message);
+        $incomingJourneyContext = $this->conversationJourneyService->syncIncomingMessage($conversation, $message);
+
+        $this->conversationManager->saveUserMessage(
+            $conversation,
+            $message,
+            $incomingJourneyContext,
+            $correlationId,
+            $sourceMetadata,
+        );
 
         $history = $this->conversationManager->getHistory($conversation);
         $actions = $user->actions()->where('enabled', true)->get();
-        $tools = ToolRegistry::getToolsForActions($actions);
-        $systemPrompt = $this->buildSystemPrompt($prompt, $panelConfig);
-
-        $options = [
-            'model' => $aiConfig->model,
-            'temperature' => $aiConfig->temperature,
-            'max_tokens' => $aiConfig->max_tokens,
-        ];
+        $context = $this->conversationContextService->build(
+            $conversation,
+            $prompt,
+            $panelConfig,
+            $history,
+            $actions,
+            $aiConfig,
+        );
 
         $provider = AIProviderFactory::make($aiConfig->provider, $aiConfig->getDecryptedApiKey());
 
+        Log::channel('notifications')->info('ORCHESTRATION_PLAN', [
+            'user_id' => $user->id,
+            'conversation_id' => $conversation->id,
+            'journey_stage' => $conversation->journey_stage,
+            'resolved_phase' => $context['resolved_phase'],
+            'allowed_action_types' => $context['orchestration_plan']->allowedActionTypes,
+            'preferred_action_types' => $context['orchestration_plan']->preferredActionTypes,
+            'pending_requirements' => $context['orchestration_plan']->pendingRequirements,
+            'tools_available' => array_map(fn (array $tool) => $tool['name'], $context['tools']),
+            'correlation_id' => $correlationId,
+        ]);
+
         if ($ruleResult->forceAction === 'transfer_human') {
-            return $this->handleTransferHuman($conversation, $ruleResult->matchedKeyword, $user);
+            return $this->handleTransferHuman(
+                $conversation,
+                $ruleResult->matchedKeyword,
+                $user,
+                $correlationId,
+                $sourceMetadata,
+            );
         }
 
-        $aiResponse = $provider->chat($systemPrompt, $history, $message, $tools, $options);
+        $initialResponse = $provider->chat(
+            $context['system_prompt'],
+            $history,
+            $message,
+            $context['tools'],
+            $context['options'],
+        );
 
-        $actionType = null;
-        $actionParams = null;
-        $actionResultData = null;
-        $actionSuccess = null;
+        $toolExecution = $this->toolExecutionOrchestrator->orchestrate(
+            $user,
+            $conversation,
+            $actions,
+            $provider,
+            $initialResponse,
+            $context['system_prompt'],
+            $history,
+            $message,
+            $context['options'],
+            $panelConfig,
+            $correlationId,
+            fn (string $toolName, array $params) => $this->executeAction($toolName, $params, $panelConfig, $user, $conversation),
+        );
 
-        if ($aiResponse->hasToolCall() && $panelConfig) {
-            $toolName = $aiResponse->toolCall->name;
-            $actionType = ToolRegistry::mapToolNameToActionType($toolName);
+        $aiResponse = new AIResponse(
+            content: $this->replyPolicyService->apply($toolExecution->response->content, $prompt, $conversation),
+            toolCall: $toolExecution->response->toolCall,
+            tokensInput: $toolExecution->response->tokensInput,
+            tokensOutput: $toolExecution->response->tokensOutput,
+            latencyMs: $toolExecution->response->latencyMs,
+            provider: $toolExecution->response->provider,
+            model: $toolExecution->response->model,
+        );
 
-            Log::channel('notifications')->info('TOOL_CALL', [
-                'user_id' => $user->id,
-                'tool' => $toolName,
-                'action_type' => $actionType,
-                'arguments' => $aiResponse->toolCall->arguments,
-                'panel_url' => $panelConfig->panel_url,
-            ]);
+        $actionType = $toolExecution->actionType;
+        $actionParams = $toolExecution->actionParams;
+        $actionResultData = $toolExecution->actionResultData;
+        $actionSuccess = $toolExecution->actionSuccess;
 
-            $action = $actions->firstWhere('action_type', $actionType);
+        $outgoingJourneyContext = $this->conversationJourneyService->syncOutgoingMessage(
+            $conversation,
+            $aiResponse->content,
+            $actionType,
+            $actionResultData,
+            $actionSuccess,
+        );
 
-            if ($action && $action->canExecute()) {
-                $actionParams = $aiResponse->toolCall->arguments;
-                $actionResult = $this->executeAction($toolName, $actionParams, $panelConfig, $user, $conversation);
-                $actionSuccess = $actionResult->success;
-                $actionResultData = $actionResult->data;
-
-                Log::channel('notifications')->info('TOOL_RESULT', [
-                    'user_id' => $user->id,
-                    'tool' => $toolName,
-                    'success' => $actionResult->success,
-                    'message' => $actionResult->message ?: $actionResult->errorMessage,
-                ]);
-
-                $action->increment('daily_count');
-
-                $this->logAction($user, $conversation, $actionType, $actionParams, $actionResult);
-
-                $aiResponse = $provider->handleToolResult(
-                    $aiResponse, $actionResult, $systemPrompt, $history, $message, $options
-                );
-            } else {
-                Log::channel('notifications')->warning('TOOL_SKIP', [
-                    'user_id' => $user->id,
-                    'tool' => $toolName,
-                    'action_found' => $action !== null,
-                    'can_execute' => $action?->canExecute(),
-                ]);
-            }
-        } elseif ($aiResponse->hasToolCall() && !$panelConfig) {
-            Log::channel('notifications')->warning('TOOL_NO_PANEL', [
-                'user_id' => $user->id,
-                'tool' => $aiResponse->toolCall->name,
-            ]);
-        }
+        $outgoingJourneyContext['context'] = array_merge(
+            $outgoingJourneyContext['context'] ?? [],
+            [
+                'resolved_phase' => $context['resolved_phase'],
+                'tool_steps_executed' => $toolExecution->stepsExecuted,
+                'tool_timeline' => $toolExecution->timeline,
+                'correlation_id' => $correlationId,
+            ],
+        );
 
         $this->conversationManager->saveAssistantMessage(
-            $conversation, $aiResponse, $actionType, $actionParams, $actionResultData, $actionSuccess
+            $conversation,
+            $aiResponse,
+            $actionType,
+            $actionParams,
+            $actionResultData,
+            $actionSuccess,
+            $outgoingJourneyContext,
+            $correlationId,
+            $sourceMetadata,
         );
 
         $this->trackUsage($user, $aiResponse, $actionType);
@@ -151,6 +192,7 @@ class AIEngine
             actionSuccess: $actionSuccess,
             tokensUsed: $aiResponse->tokensInput + $aiResponse->tokensOutput,
             latencyMs: $aiResponse->latencyMs,
+            correlationId: $correlationId,
         );
     }
 
@@ -172,18 +214,18 @@ class AIEngine
     private function executeAction(
         string $toolName,
         array $params,
-        object $panelConfig,
+        ?object $panelConfig,
         User $user,
         Conversation $conversation,
     ): ActionResult {
-        $xuiService = new XuiPanelService($panelConfig);
+        $xuiService = $panelConfig ? new XuiPanelService($panelConfig) : null;
 
         return match ($toolName) {
-            'criar_teste' => $xuiService->criarTeste($params),
-            'renovar_cliente' => $xuiService->renovarCliente($params),
-            'consultar_status' => $xuiService->consultarStatus($params),
-            'listar_pacotes' => $xuiService->listarPacotes(),
-            'consultar_saldo' => $xuiService->consultarSaldo(),
+            'criar_teste' => $xuiService?->criarTeste($params) ?? new ActionResult(false, errorMessage: 'Painel XUI não configurado.'),
+            'renovar_cliente' => $xuiService?->renovarCliente($params) ?? new ActionResult(false, errorMessage: 'Painel XUI não configurado.'),
+            'consultar_status' => $xuiService?->consultarStatus($params) ?? new ActionResult(false, errorMessage: 'Painel XUI não configurado.'),
+            'listar_pacotes' => $xuiService?->listarPacotes() ?? new ActionResult(false, errorMessage: 'Painel XUI não configurado.'),
+            'consultar_saldo' => $xuiService?->consultarSaldo() ?? new ActionResult(false, errorMessage: 'Painel XUI não configurado.'),
             'transferir_humano' => new ActionResult(
                 success: true,
                 message: 'Transferência solicitada. O revendedor será notificado.',
@@ -271,12 +313,27 @@ class AIEngine
         );
     }
 
-    private function handleTransferHuman(Conversation $conversation, ?string $keyword, User $user): ProcessResult
+    private function handleTransferHuman(
+        Conversation $conversation,
+        ?string $keyword,
+        User $user,
+        ?string $correlationId = null,
+        ?array $sourceMetadata = null,
+    ): ProcessResult
     {
+        $reply = 'Vou transferir você para atendimento humano. Um momento, por favor.';
+        $journeyContext = $this->conversationJourneyService->syncOutgoingMessage(
+            $conversation,
+            $reply,
+            'transfer_human',
+            ['transferred' => true, 'reason' => $keyword ?: 'Solicitação do cliente'],
+            true,
+        );
+
         $this->conversationManager->saveAssistantMessage(
             $conversation,
             new AIResponse(
-                content: 'Vou transferir você para atendimento humano. Um momento, por favor.',
+                content: $reply,
                 provider: 'system',
                 model: 'rule_engine',
             ),
@@ -284,13 +341,17 @@ class AIEngine
             ['keyword' => $keyword],
             ['transferred' => true],
             true,
+            $journeyContext,
+            $correlationId,
+            $sourceMetadata,
         );
 
         return new ProcessResult(
-            reply: 'Vou transferir você para atendimento humano. Um momento, por favor.',
+            reply: $reply,
             conversationId: $conversation->id,
             action: 'transfer_human',
             actionSuccess: true,
+            correlationId: $correlationId,
         );
     }
 
@@ -356,5 +417,6 @@ class ProcessResult
         public readonly ?string $error = null,
         public readonly int $tokensUsed = 0,
         public readonly int $latencyMs = 0,
+        public readonly ?string $correlationId = null,
     ) {}
 }

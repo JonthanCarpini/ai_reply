@@ -30,6 +30,8 @@ class MessageController extends Controller
             'from_me' => ['nullable', 'boolean'],
             'message_type' => ['nullable', 'string', 'in:text,image,audio,video,sticker,document,contact,location'],
             'media_data' => ['nullable', 'string'],
+            'correlation_id' => ['nullable', 'string', 'max:255'],
+            'source_metadata' => ['nullable', 'array'],
         ]);
 
         $user = $request->user();
@@ -38,6 +40,8 @@ class MessageController extends Controller
         $fromMe = $validated['from_me'] ?? false;
         $messageType = $validated['message_type'] ?? 'text';
         $mediaData = $validated['media_data'] ?? null;
+        $correlationId = $validated['correlation_id'] ?? null;
+        $sourceMetadata = $validated['source_metadata'] ?? null;
 
         Log::channel('notifications')->info('PROCESS_REQUEST', [
             'user_id' => $user->id,
@@ -46,6 +50,7 @@ class MessageController extends Controller
             'from_me' => $fromMe,
             'message_type' => $messageType,
             'has_media' => $mediaData !== null,
+            'correlation_id' => $correlationId,
         ]);
 
         // ── CAMADA 1: flag from_me enviada pelo app ──
@@ -84,6 +89,8 @@ class MessageController extends Controller
             message: $processedMessage,
             contactName: $validated['contact_name'] ?? null,
             whatsappNumber: $validated['whatsapp_number'] ?? null,
+            correlationId: $correlationId,
+            sourceMetadata: $sourceMetadata,
         );
 
         if ($result->error) {
@@ -109,6 +116,7 @@ class MessageController extends Controller
         Log::channel('notifications')->info('PROCESS_REPLY', [
             'contact' => $contactPhone,
             'reply' => Str::limit($result->reply, 80),
+            'correlation_id' => $result->correlationId,
         ]);
 
         return response()->json([
@@ -119,6 +127,7 @@ class MessageController extends Controller
             'action_success' => $result->actionSuccess,
             'tokens_used' => $result->tokensUsed,
             'latency_ms' => $result->latencyMs,
+            'correlation_id' => $result->correlationId,
         ]);
     }
 

@@ -35,6 +35,9 @@ export default function HomeScreen() {
         contactPhone: data.contactPhone,
         message: data.message,
         response: data.reply,
+        correlationId: data.correlationId,
+        batchId: data.batchId,
+        batchSize: data.batchSize,
       });
     });
 

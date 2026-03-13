@@ -15,6 +15,9 @@ class Message extends Model
         'action_params',
         'action_result',
         'action_success',
+        'context_data',
+        'correlation_id',
+        'source_metadata',
         'ai_provider',
         'ai_model',
         'tokens_input',
@@ -28,6 +31,8 @@ class Message extends Model
             'action_params' => 'array',
             'action_result' => 'array',
             'action_success' => 'boolean',
+            'context_data' => 'array',
+            'source_metadata' => 'array',
         ];
     }
 

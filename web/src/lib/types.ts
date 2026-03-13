@@ -86,16 +86,40 @@ export interface AiConfig {
   has_api_key: boolean;
 }
 
+export interface StructuredPromptConfig {
+  identity?: string;
+  tone?: string;
+  permanent_rules?: string;
+  automatic_triggers?: string;
+  phase_flow?: string;
+  response_policy?: string;
+}
+
+export interface ReplyPolicyConfig {
+  max_chars?: number;
+  max_tool_steps?: number;
+  enforce_short_reply?: boolean;
+  blocked_terms?: string[];
+}
+
 export interface Prompt {
   id: number;
   name: string;
   system_prompt: string;
+  structured_prompt: StructuredPromptConfig | null;
+  reply_policy: ReplyPolicyConfig | null;
   greeting_message: string | null;
   fallback_message: string | null;
   offline_message: string | null;
   custom_variables: Record<string, string> | null;
   is_active: boolean;
   version: number;
+}
+
+export interface ActionPreconditions {
+  required_params?: string[];
+  required_collected_data?: string[];
+  blocked_journey_stages?: string[];
 }
 
 export interface Action {
@@ -105,6 +129,9 @@ export interface Action {
   enabled: boolean;
   params: Record<string, unknown> | null;
   custom_instructions: string | null;
+  preconditions: ActionPreconditions | null;
+  phase_scope: string[] | null;
+  max_tool_steps: number;
   daily_limit: number;
   daily_count: number;
 }
@@ -116,12 +143,32 @@ export interface Rule {
   enabled: boolean;
 }
 
+export interface ConversationJourneySnapshot {
+  journey_stage: string;
+  journey_status: string;
+  collected_data: Record<string, unknown>;
+  pending_requirements: string[];
+  last_tool_name: string | null;
+  last_tool_status: string | null;
+  human_handoff_requested: boolean;
+  customer_flags: Record<string, unknown>;
+  context?: Record<string, unknown>;
+}
+
 export interface Conversation {
   id: number;
   contact_phone: string;
   contact_name: string | null;
   whatsapp_number: string | null;
   status: 'active' | 'archived' | 'blocked';
+  journey_stage: string;
+  journey_status: string;
+  collected_data: Record<string, unknown> | null;
+  pending_requirements: string[] | null;
+  last_tool_name: string | null;
+  last_tool_status: string | null;
+  human_handoff_requested: boolean;
+  customer_flags: Record<string, unknown> | null;
   message_count: number;
   actions_executed: number;
   last_message_at: string | null;
@@ -135,6 +182,9 @@ export interface Message {
   action_type: string | null;
   action_result: Record<string, unknown> | null;
   action_success: boolean | null;
+  context_data: ConversationJourneySnapshot | null;
+  correlation_id: string | null;
+  source_metadata: Record<string, unknown> | null;
   ai_provider: string | null;
   ai_model: string | null;
   tokens_input: number;

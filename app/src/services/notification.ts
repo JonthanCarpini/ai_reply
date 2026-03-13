@@ -1,4 +1,5 @@
 import { NativeModules, NativeEventEmitter, Platform } from 'react-native';
+import { NotificationProcessedEvent } from '../types';
 
 const { NotificationBridge } = NativeModules;
 
@@ -64,7 +65,7 @@ export const NotificationService = {
     return NotificationBridge.needsRestrictedSettingsPermission();
   },
 
-  onMessageProcessed: (callback: (data: any) => void) => {
+  onMessageProcessed: (callback: (data: NotificationProcessedEvent) => void) => {
     if (!emitter) return { remove: () => {} };
     return emitter.addListener('onMessageProcessed', callback);
   },

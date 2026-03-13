@@ -20,6 +20,8 @@ class PromptController extends Controller
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'system_prompt' => ['required', 'string', 'max:10000'],
+            'structured_prompt' => ['nullable', 'array'],
+            'reply_policy' => ['nullable', 'array'],
             'greeting_message' => ['nullable', 'string', 'max:2000'],
             'fallback_message' => ['nullable', 'string', 'max:2000'],
             'offline_message' => ['nullable', 'string', 'max:2000'],
@@ -38,6 +40,8 @@ class PromptController extends Controller
         $validated = $request->validate([
             'name' => ['sometimes', 'string', 'max:255'],
             'system_prompt' => ['sometimes', 'string', 'max:10000'],
+            'structured_prompt' => ['nullable', 'array'],
+            'reply_policy' => ['nullable', 'array'],
             'greeting_message' => ['nullable', 'string', 'max:2000'],
             'fallback_message' => ['nullable', 'string', 'max:2000'],
             'offline_message' => ['nullable', 'string', 'max:2000'],

@@ -15,6 +15,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.UUID
 
 class WhatsAppNotificationListener : NotificationListenerService() {
 
@@ -200,15 +201,19 @@ class WhatsAppNotificationListener : NotificationListenerService() {
             // O backend decide se processa ou ignora
             val fullMessage = messages.joinToString("\n") { it.text }
             val lastFromMe = messages.last().fromMe
+            val batchId = "android-${UUID.randomUUID()}"
+            val batchSize = messages.size
+            val batchStartedAt = messages.first().time
+            val batchEndedAt = messages.last().time
 
             // Pegar tipo e mídia da mensagem mais relevante (última com mídia, ou última)
             val mediaMsg = messages.lastOrNull { it.mediaBase64 != null } ?: messages.last()
             val messageType = mediaMsg.messageType
             val mediaBase64 = mediaMsg.mediaBase64
 
-            Log.i(TAG, "=== SEND: $contact msgs=${messages.size} type=$messageType from_me=$lastFromMe text='${fullMessage.take(80)}'")
+            Log.i(TAG, "=== SEND: $contact batch=$batchId msgs=$batchSize type=$messageType from_me=$lastFromMe text='${fullMessage.take(80)}'")
 
-            callApiAndReply(contact, fullMessage, lastFromMe, replyAction, lastSbn, messageType, mediaBase64)
+            callApiAndReply(contact, fullMessage, lastFromMe, replyAction, lastSbn, messageType, mediaBase64, batchId, batchSize, batchStartedAt, batchEndedAt)
         } catch (e: Exception) {
             Log.e(TAG, "Error in flushBuffer", e)
             NotificationBridge.sendError(this@WhatsAppNotificationListener, e.message ?: "Error")
@@ -226,11 +231,16 @@ class WhatsAppNotificationListener : NotificationListenerService() {
         replyAction: Notification.Action,
         sbn: StatusBarNotification,
         messageType: String = "text",
-        mediaBase64: String? = null
+        mediaBase64: String? = null,
+        batchId: String,
+        batchSize: Int,
+        batchStartedAt: Long,
+        batchEndedAt: Long
     ) {
         val token = getAuthToken() ?: return
         val apiUrl = getApiUrl()
         val phone = extractPhone(sbn).ifEmpty { sender }
+        val correlationId = batchId
 
         val url = URL("$apiUrl/messages/process")
         val conn = url.openConnection() as HttpURLConnection
@@ -248,6 +258,18 @@ class WhatsAppNotificationListener : NotificationListenerService() {
             put("message", message)
             put("from_me", fromMe)
             put("message_type", messageType)
+            put("correlation_id", correlationId)
+            put("source_metadata", JSONObject().apply {
+                put("source", "android_notification_listener")
+                put("channel", "whatsapp_notification")
+                put("package_name", sbn.packageName)
+                put("batch_id", batchId)
+                put("batch_size", batchSize)
+                put("batch_started_at", batchStartedAt)
+                put("batch_ended_at", batchEndedAt)
+                put("message_type", messageType)
+                put("has_media", mediaBase64 != null)
+            })
             if (mediaBase64 != null) {
                 put("media_data", mediaBase64)
             }
@@ -267,10 +289,11 @@ class WhatsAppNotificationListener : NotificationListenerService() {
         val json = JSONObject(responseBody)
         val reply = json.optString("reply", "")
         val skipped = json.optBoolean("skipped", false)
+        val responseCorrelationId = json.optString("correlation_id", correlationId)
 
-        Log.d(TAG, "API_RESP: reply='${reply.take(60)}' skipped=$skipped")
+        Log.d(TAG, "API_RESP: correlation=$responseCorrelationId reply='${reply.take(60)}' skipped=$skipped")
 
-        NotificationBridge.sendMessageProcessed(this, sender, phone, message, reply)
+        NotificationBridge.sendMessageProcessed(this, sender, phone, message, reply, responseCorrelationId, batchId, batchSize)
 
         // Se backend disse para ignorar ou resposta vazia → não responder
         if (skipped || reply.isEmpty()) {

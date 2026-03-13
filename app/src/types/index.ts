@@ -57,6 +57,9 @@ export interface LogEntry {
   response?: string;
   actionType?: string;
   error?: string;
+  correlationId?: string;
+  batchId?: string;
+  batchSize?: number;
 }
 
 export interface ServiceStatus {
@@ -64,6 +67,17 @@ export interface ServiceStatus {
   hasPermission: boolean;
   isBatteryOptimized: boolean;
   lastActivity: string | null;
+}
+
+export interface NotificationProcessedEvent {
+  contactName: string;
+  contactPhone: string;
+  message: string;
+  reply: string;
+  correlationId?: string;
+  batchId?: string;
+  batchSize?: number;
+  timestamp: string;
 }
 
 export type RootStackParamList = {

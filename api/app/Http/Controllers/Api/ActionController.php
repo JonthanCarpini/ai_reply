@@ -23,6 +23,10 @@ class ActionController extends Controller
             'enabled' => ['sometimes', 'boolean'],
             'params' => ['nullable', 'array'],
             'custom_instructions' => ['nullable', 'string', 'max:2000'],
+            'preconditions' => ['nullable', 'array'],
+            'phase_scope' => ['nullable', 'array'],
+            'phase_scope.*' => ['string', 'max:100'],
+            'max_tool_steps' => ['sometimes', 'integer', 'min:1', 'max:3'],
             'daily_limit' => ['sometimes', 'integer', 'min:0'],
         ]);
 
