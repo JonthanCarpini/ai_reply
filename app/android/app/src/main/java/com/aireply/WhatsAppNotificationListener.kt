@@ -188,6 +188,7 @@ class WhatsAppNotificationListener : NotificationListenerService() {
         }
         if (replyAction == null) {
             Log.d(TAG, "SKIP: no reply action for $contact")
+            NotificationBridge.sendError(this@WhatsAppNotificationListener, "Sem resposta rápida disponível para $contact")
             return
         }
 
@@ -237,7 +238,13 @@ class WhatsAppNotificationListener : NotificationListenerService() {
         batchStartedAt: Long,
         batchEndedAt: Long
     ) {
-        val token = getAuthToken() ?: return
+        val token = getAuthToken()
+        if (token.isNullOrBlank()) {
+            Log.e(TAG, "SKIP: missing auth token for $sender")
+            NotificationBridge.sendError(this, "Token do app não sincronizado. Abra Config > Sync e teste novamente.")
+            return
+        }
+
         val apiUrl = getApiUrl()
         val phone = extractPhone(sbn).ifEmpty { sender }
         val correlationId = batchId
@@ -281,7 +288,7 @@ class WhatsAppNotificationListener : NotificationListenerService() {
         if (responseCode != 200) {
             val err = conn.errorStream?.bufferedReader()?.readText() ?: ""
             Log.e(TAG, "API $responseCode: $err")
-            NotificationBridge.sendError(this, "API $responseCode")
+            NotificationBridge.sendError(this, "API $responseCode: ${err.take(120)}")
             return
         }
 

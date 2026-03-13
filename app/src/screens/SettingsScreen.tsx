@@ -3,13 +3,13 @@ import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert, ActivityIn
 import { useAuth } from '../store/auth';
 import { useSync } from '../store/sync';
 import { NotificationService } from '../services/notification';
-import api from '../services/api';
+import api, { API_URL } from '../services/api';
 
 const WA_PKG = 'com.whatsapp';
 const WA_BIZ_PKG = 'com.whatsapp.w4b';
 
 export default function SettingsScreen() {
-  const { user, logout } = useAuth();
+  const { user, token, logout } = useAuth();
   const { data: syncData, loading: syncing, pull, push } = useSync();
   const [whatsappEnabled, setWhatsappEnabled] = useState(true);
   const [businessEnabled, setBusinessEnabled] = useState(true);
@@ -18,10 +18,16 @@ export default function SettingsScreen() {
 
   const loadConfig = useCallback(async () => {
     await pull();
+
+    if (token) {
+      await NotificationService.setAuthToken(token);
+      await NotificationService.setApiUrl(API_URL);
+    }
+
     const pkgs = await NotificationService.getWhatsAppPackages();
     setWhatsappEnabled(pkgs.includes(WA_PKG));
     setBusinessEnabled(pkgs.includes(WA_BIZ_PKG));
-  }, [pull]);
+  }, [pull, token]);
 
   useEffect(() => { loadConfig(); }, []);
 
