@@ -20,7 +20,7 @@ class ConversationPhaseOrchestrator
             'qualification' => $this->buildQualificationPlan($deviceType, $pendingRequirements),
             'trial_request' => new OrchestrationPlan(
                 stage: $stage,
-                instruction: 'O cliente demonstrou interesse em teste. Priorize criar o teste imediatamente usando a ferramenta de teste. Não peça dados extras desnecessários. Após criar, entregue acesso e próximos passos.',
+                instruction: 'O cliente demonstrou interesse em teste. Priorize criar o teste imediatamente usando a ferramenta de teste. Use o nome do WhatsApp já disponível quando existir e não peça o nome do cliente. Depois de enviar os acessos, se o dispositivo ainda não estiver claro, faça uma única pergunta objetiva sobre em qual aparelho ele vai testar para indicar o melhor aplicativo.',
                 allowedActionTypes: ['create_test', 'recommend_app', 'transfer_human'],
                 preferredActionTypes: ['create_test', 'recommend_app'],
                 pendingRequirements: $pendingRequirements,
@@ -60,13 +60,7 @@ class ConversationPhaseOrchestrator
                 preferredActionTypes: ['recommend_app', 'create_test'],
                 pendingRequirements: $pendingRequirements,
             ),
-            'test_created' => new OrchestrationPlan(
-                stage: $stage,
-                instruction: 'O teste já foi criado. Confirme que os dados de acesso foram enviados, incentive o cliente a testar e ofereça ajuda de configuração. Se necessário, recomende aplicativo.',
-                allowedActionTypes: ['recommend_app', 'transfer_human'],
-                preferredActionTypes: ['recommend_app'],
-                pendingRequirements: $pendingRequirements,
-            ),
+            'test_created' => $this->buildTestCreatedPlan($deviceType, $pendingRequirements),
             'renewal_completed' => new OrchestrationPlan(
                 stage: $stage,
                 instruction: 'A renovação já foi concluída. Responda confirmando a renovação, informe validade ou status se disponível e ofereça suporte adicional sem iniciar um novo fluxo.',
@@ -138,6 +132,27 @@ class ConversationPhaseOrchestrator
             instruction: 'O dispositivo do cliente já foi identificado. Priorize recomendar o aplicativo adequado para esse aparelho. Se o cliente pedir para testar, você pode criar o teste em seguida.',
             allowedActionTypes: ['recommend_app', 'create_test', 'transfer_human'],
             preferredActionTypes: ['recommend_app', 'create_test'],
+            pendingRequirements: $pendingRequirements,
+        );
+    }
+
+    private function buildTestCreatedPlan(?string $deviceType, array $pendingRequirements): OrchestrationPlan
+    {
+        if (empty($deviceType)) {
+            return new OrchestrationPlan(
+                stage: 'test_created',
+                instruction: 'O teste já foi criado e os acessos já foram enviados. Agora faça uma única pergunta objetiva para descobrir em qual dispositivo o cliente vai testar, para então indicar o melhor aplicativo. Não peça o nome do cliente se o nome do WhatsApp já estiver disponível.',
+                allowedActionTypes: ['transfer_human'],
+                preferredActionTypes: [],
+                pendingRequirements: $pendingRequirements,
+            );
+        }
+
+        return new OrchestrationPlan(
+            stage: 'test_created',
+            instruction: 'O teste já foi criado. Confirme que os dados de acesso foram enviados, incentive o cliente a testar e ofereça ajuda de configuração. Se necessário, recomende aplicativo.',
+            allowedActionTypes: ['recommend_app', 'transfer_human'],
+            preferredActionTypes: ['recommend_app'],
             pendingRequirements: $pendingRequirements,
         );
     }

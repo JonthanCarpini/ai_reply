@@ -25,9 +25,11 @@ class XuiPanelService
     {
         $start = hrtime(true);
 
-        $username = $params['username'] ?? (string) random_int(100000, 999999);
+        $username = $params['username'] ?? $this->buildTrialUsername($params);
         $password = $params['password'] ?? (string) random_int(100000, 999999);
         $packageId = $params['package_id'] ?? null;
+        $phone = $this->normalizePhone($params['contact_phone'] ?? null);
+        $contactName = trim((string) ($params['contact_name'] ?? ''));
 
         // Se package_id não foi informado, usar o configurado pelo usuário
         if (!$packageId && $this->defaultTestPackageId) {
@@ -54,15 +56,30 @@ class XuiPanelService
             'username' => $username,
             'password' => $password,
             'package_id' => (int) $packageId,
+            'phone' => $phone,
+            'notes' => $contactName !== '' ? 'Contato WhatsApp: ' . $contactName : '',
         ];
 
         Log::info('[XuiPanel] criarTeste request', [
             'url' => $this->baseUrl . '/api/reseller/create-test',
             'username' => $username,
             'package_id' => $packageId,
+            'phone' => $phone,
         ]);
 
         $response = $this->post('/api/reseller/create-test', $payload);
+
+        if (!$response['success'] && $this->shouldRetryWithRandomUsername($response['message'] ?? '')) {
+            $payload['username'] = $this->buildFallbackUsername();
+
+            Log::warning('[XuiPanel] Retry create-test with fallback username', [
+                'package_id' => $packageId,
+                'username' => $payload['username'],
+            ]);
+
+            $response = $this->post('/api/reseller/create-test', $payload);
+        }
+
         $latency = $this->calcLatency($start);
 
         Log::info('[XuiPanel] criarTeste response', [
@@ -315,7 +332,31 @@ class XuiPanelService
             $response = Http::timeout(15)->post($this->baseUrl . $endpoint, $data);
 
             if (!$response->successful()) {
-                return ['success' => false, 'message' => 'Painel retornou erro HTTP ' . $response->status()];
+                $body = $response->json();
+                $detail = '';
+
+                if (is_array($body)) {
+                    $detail = (string) (
+                        $body['message']
+                        ?? $body['error']
+                        ?? ($body['data']['message'] ?? '')
+                    );
+                }
+
+                if ($detail === '') {
+                    $detail = Str::limit(trim($response->body()), 180, '...');
+                }
+
+                Log::warning('[XuiPanel] HTTP error', [
+                    'endpoint' => $endpoint,
+                    'status' => $response->status(),
+                    'detail' => $detail,
+                ]);
+
+                return [
+                    'success' => false,
+                    'message' => 'Painel retornou erro HTTP ' . $response->status() . ($detail !== '' ? ': ' . $detail : ''),
+                ];
             }
 
             $json = $response->json();
@@ -327,6 +368,11 @@ class XuiPanelService
 
             return ['success' => $json['success'] ?? true, 'data' => $json['data'] ?? $json, 'message' => $json['message'] ?? ''];
         } catch (\Exception $e) {
+            Log::error('[XuiPanel] Connection error', [
+                'endpoint' => $endpoint,
+                'error' => $e->getMessage(),
+            ]);
+
             return ['success' => false, 'message' => 'Erro de conexão: ' . $e->getMessage()];
         }
     }
@@ -334,5 +380,52 @@ class XuiPanelService
     private function calcLatency(int $start): int
     {
         return (int) ((hrtime(true) - $start) / 1_000_000);
+    }
+
+    private function buildTrialUsername(array $params): string
+    {
+        $contactName = trim((string) ($params['contact_name'] ?? ''));
+        $phoneSuffix = substr($this->normalizePhone($params['contact_phone'] ?? null) ?? '', -4);
+        $base = preg_replace('/[^a-z0-9]/', '', Str::lower(Str::ascii($contactName)));
+        $base = substr($base, 0, 10);
+
+        if ($base === '') {
+            return $this->buildFallbackUsername();
+        }
+
+        $suffix = $phoneSuffix !== '' ? $phoneSuffix : (string) random_int(1000, 9999);
+        $username = $base . $suffix;
+
+        if (strlen($username) < 3) {
+            $username .= (string) random_int(100, 999);
+        }
+
+        return $username;
+    }
+
+    private function buildFallbackUsername(): string
+    {
+        return 'teste' . random_int(1000, 9999);
+    }
+
+    private function normalizePhone(?string $phone): ?string
+    {
+        $normalized = preg_replace('/\D+/', '', (string) $phone);
+
+        return $normalized !== '' ? $normalized : null;
+    }
+
+    private function shouldRetryWithRandomUsername(string $message): bool
+    {
+        $normalized = mb_strtolower($message);
+
+        return str_contains($normalized, 'username')
+            && (
+                str_contains($normalized, 'exist')
+                || str_contains($normalized, 'duplic')
+                || str_contains($normalized, 'indispon')
+                || str_contains($normalized, 'já existe')
+                || str_contains($normalized, 'ja existe')
+            );
     }
 }

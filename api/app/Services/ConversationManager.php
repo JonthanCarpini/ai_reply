@@ -16,14 +16,33 @@ class ConversationManager
         ?string $contactName = null,
         ?string $whatsappNumber = null
     ): Conversation {
-        return Conversation::firstOrCreate(
+        $normalizedContactName = $this->normalizeContactName($contactName, $contactPhone);
+
+        $conversation = Conversation::firstOrCreate(
             ['user_id' => $user->id, 'contact_phone' => $contactPhone],
             [
-                'contact_name' => $contactName,
+                'contact_name' => $normalizedContactName,
                 'whatsapp_number' => $whatsappNumber,
                 'status' => 'active',
             ]
         );
+
+        $updates = [];
+
+        if ($normalizedContactName !== null && $conversation->contact_name !== $normalizedContactName) {
+            $updates['contact_name'] = $normalizedContactName;
+        }
+
+        if ($whatsappNumber !== null && $conversation->whatsapp_number !== $whatsappNumber) {
+            $updates['whatsapp_number'] = $whatsappNumber;
+        }
+
+        if ($updates !== []) {
+            $conversation->update($updates);
+            $conversation->refresh();
+        }
+
+        return $conversation;
     }
 
     public function getHistory(Conversation $conversation, int $limit = 10): Collection
@@ -56,10 +75,6 @@ class ConversationManager
 
         $conversation->increment('message_count');
         $conversation->update(['last_message_at' => now()]);
-
-        if ($conversation->contact_name === null) {
-            $conversation->update(['contact_name' => $conversation->contact_phone]);
-        }
 
         return $msg;
     }
@@ -105,5 +120,16 @@ class ConversationManager
     public function isBlocked(Conversation $conversation): bool
     {
         return $conversation->status === 'blocked';
+    }
+
+    private function normalizeContactName(?string $contactName, string $contactPhone): ?string
+    {
+        $normalized = trim((string) $contactName);
+
+        if ($normalized === '' || $normalized === $contactPhone) {
+            return null;
+        }
+
+        return $normalized;
     }
 }

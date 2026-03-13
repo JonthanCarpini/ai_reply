@@ -12,9 +12,16 @@ class ConversationJourneyService
         $customerFlags = $conversation->customer_flags ?? [];
         $pendingRequirements = $conversation->pending_requirements ?? [];
         $currentStage = $conversation->journey_stage ?: 'new_contact';
+        $contactName = trim((string) ($conversation->contact_name ?? ''));
 
         $intent = $this->detectIntent($message);
         $deviceType = $this->extractDeviceType($message);
+
+        if ($contactName !== '' && $contactName !== $conversation->contact_phone) {
+            $collectedData['contact_name'] = $contactName;
+        } else {
+            unset($collectedData['contact_name']);
+        }
 
         if ($deviceType !== null) {
             $collectedData['device_type'] = $deviceType;
@@ -64,7 +71,9 @@ class ConversationJourneyService
 
         if ($actionType === 'create_test') {
             $stage = !empty($actionSuccess) ? 'test_created' : 'trial_request';
-            $pendingRequirements = !empty($actionSuccess) ? ['customer_feedback'] : $pendingRequirements;
+            $pendingRequirements = !empty($actionSuccess)
+                ? (empty($collectedData['device_type']) ? ['device_type'] : ['customer_feedback'])
+                : $pendingRequirements;
         }
 
         if ($actionType === 'renew_client') {
@@ -129,6 +138,9 @@ class ConversationJourneyService
     public function appendJourneyContext(string $systemPrompt, Conversation $conversation): string
     {
         $journeyContext = [
+            'contact_name' => $conversation->contact_name,
+            'contact_phone' => $conversation->contact_phone,
+            'whatsapp_number' => $conversation->whatsapp_number,
             'journey_stage' => $conversation->journey_stage,
             'journey_status' => $conversation->journey_status,
             'collected_data' => $conversation->collected_data ?? [],
@@ -254,10 +266,10 @@ class ConversationJourneyService
     {
         return match ($stage) {
             'qualification' => empty($collectedData['device_type']) ? ['device_type'] : [],
-            'trial_request' => ['customer_name_confirmation'],
+            'trial_request' => [],
             'payment_or_renewal' => ['payment_confirmation'],
             'support' => ['problem_description'],
-            'test_created' => ['customer_feedback'],
+            'test_created' => empty($collectedData['device_type']) ? ['device_type'] : ['customer_feedback'],
             default => [],
         };
     }

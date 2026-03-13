@@ -141,8 +141,10 @@ class AIEngine
             fn (string $toolName, array $params) => $this->executeAction($toolName, $params, $panelConfig, $user, $conversation),
         );
 
+        $resolvedReply = $this->resolveAssistantReply($toolExecution->response->content, $toolExecution->actionType, $toolExecution->actionSuccess, $toolExecution->timeline);
+
         $aiResponse = new AIResponse(
-            content: $this->replyPolicyService->apply($toolExecution->response->content, $prompt, $conversation),
+            content: $this->replyPolicyService->apply($resolvedReply, $prompt, $conversation),
             toolCall: $toolExecution->response->toolCall,
             tokensInput: $toolExecution->response->tokensInput,
             tokensOutput: $toolExecution->response->tokensOutput,
@@ -223,9 +225,13 @@ class AIEngine
         Conversation $conversation,
     ): ActionResult {
         $xuiService = $panelConfig ? new XuiPanelService($panelConfig) : null;
+        $enrichedParams = array_merge($params, [
+            'contact_name' => $conversation->contact_name,
+            'contact_phone' => $conversation->contact_phone,
+        ]);
 
         return match ($toolName) {
-            'criar_teste' => $xuiService?->criarTeste($params) ?? new ActionResult(false, errorMessage: 'Painel XUI não configurado.'),
+            'criar_teste' => $xuiService?->criarTeste($enrichedParams) ?? new ActionResult(false, errorMessage: 'Painel XUI não configurado.'),
             'renovar_cliente' => $xuiService?->renovarCliente($params) ?? new ActionResult(false, errorMessage: 'Painel XUI não configurado.'),
             'consultar_status' => $xuiService?->consultarStatus($params) ?? new ActionResult(false, errorMessage: 'Painel XUI não configurado.'),
             'listar_pacotes' => $xuiService?->listarPacotes() ?? new ActionResult(false, errorMessage: 'Painel XUI não configurado.'),
@@ -299,6 +305,29 @@ class AIEngine
                 'apps' => $apps->toArray(),
             ],
         );
+    }
+
+    private function resolveAssistantReply(string $reply, ?string $actionType, ?bool $actionSuccess, array $timeline): string
+    {
+        if ($actionSuccess !== false) {
+            return $reply;
+        }
+
+        $lastStep = $timeline !== [] ? end($timeline) : null;
+        $errorMessage = is_array($lastStep) ? trim((string) ($lastStep['message'] ?? '')) : '';
+
+        if ($errorMessage === '') {
+            return $reply;
+        }
+
+        return match ($actionType) {
+            'create_test' => "Não consegui criar o teste agora: {$errorMessage}",
+            'recommend_app' => "Não consegui indicar o aplicativo agora: {$errorMessage}",
+            'check_status' => "Não consegui consultar a conta agora: {$errorMessage}",
+            'renew_client' => "Não consegui concluir a renovação agora: {$errorMessage}",
+            'list_packages' => "Não consegui listar os pacotes agora: {$errorMessage}",
+            default => $reply !== '' ? $reply : $errorMessage,
+        };
     }
 
     private function handleRuleBlock(RuleResult $ruleResult, object $prompt, Conversation $conversation): ProcessResult
